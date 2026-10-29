@@ -1,0 +1,8 @@
+:80 {
+  root * /srv
+  encode zstd gzip
+  @api path /api/* /health /ws
+  reverse_proxy @api server:3000
+  try_files {path} /index.html
+  file_server
+}

@@ -1,0 +1,10 @@
+import { describe, expect, it } from 'vitest';
+import { apply, legalActions, recomputeAwards } from '../src/index.js';
+import { stateAt } from './helpers.js';
+
+describe('victory and Largest Army',()=>{
+  it('awards victory only when the scored player takes their own turn',()=>{const s=stateAt('roll');for(let i=0;i<10;i++)s.buildings[i]={owner:1,kind:'settlement'};const action=legalActions(s,'p0').find(a=>a.type==='roll')!;const n=apply(s,action).state;expect(n.winner).toBeNull();const turn=apply(n,{playerId:'p0',type:'endTurn'}).state;const next=apply(turn,{playerId:'p1',type:'roll'}).state;expect(next.winner).toBe(1);});
+  it('ends immediately when the active player reaches the target by building',()=>{const s=stateAt('build');s.settings.victoryTarget=2;s.buildings.fill(null);let candidate=-1;outer:for(const e1 of s.board.edges){const start=e1.vertices[0];const middle=e1.vertices[1];for(const e2id of s.board.vertices[middle]!.edges){if(e2id===e1.id)continue;const e2=s.board.edges[e2id]!;const end=e2.vertices[0]===middle?e2.vertices[1]:e2.vertices[0];if(!s.board.vertices[end]!.edges.some(id=>id!==e2id&&s.board.edges[id]!.vertices.some(v=>v!==end&&v!==middle))){continue;}candidate=end;s.buildings[start]={owner:0,kind:'settlement'};s.roads[e1.id]={owner:0};s.roads[e2id]={owner:0};s.players[0]!.settlementsLeft=4;s.players[0]!.roadsLeft-=2;break outer;}}const action=legalActions(s,'p0').find(a=>a.type==='buildSettlement'&&a.vertex===candidate);if(!action)throw new Error('fixture did not offer settlement');const n=apply(s,action).state;expect(n.winner).toBe(0);expect(n.phase).toBe('finished');});
+  it('awards Largest Army at three knights and keeps its holder on a tie',()=>{const s=stateAt();s.players[0]!.knightsPlayed=3;recomputeAwards(s);expect(s.largestArmyHolder).toBe(0);s.players[1]!.knightsPlayed=3;recomputeAwards(s);expect(s.largestArmyHolder).toBe(0);});
+  it('clears Largest Army when several new players tie',()=>{const s=stateAt();s.players[0]!.knightsPlayed=3;s.players[1]!.knightsPlayed=3;recomputeAwards(s);expect(s.largestArmyHolder).toBeNull();});
+});

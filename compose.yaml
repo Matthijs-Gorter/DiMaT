@@ -1,0 +1,24 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      DIMAT_DB: /data/dimat.sqlite
+    volumes:
+      - dimat_data:/data
+    expose:
+      - "3000"
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "8080:80"
+volumes:
+  dimat_data:

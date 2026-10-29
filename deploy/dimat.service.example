@@ -1,0 +1,25 @@
+[Unit]
+Description=DiMaT browser game server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dimat
+Group=dimat
+WorkingDirectory=/opt/DiMaT
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=DIMAT_DB=/var/lib/dimat/dimat.sqlite
+StateDirectory=dimat
+ExecStart=/usr/bin/pnpm --filter @dimat/server start
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/dimat
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,7 @@
+{
+  "name":"@dimat/protocol","private":true,"version":"0.1.0","type":"module",
+  "exports":{".":"./src/index.ts"},
+  "scripts":{"typecheck":"tsc -p tsconfig.json","lint":"eslint .","test":"vitest run"},
+  "dependencies":{"@dimat/engine":"workspace:*","zod":"^4.1.12"},
+  "devDependencies":{"typescript":"^5.9.3","vitest":"^3.2.4"}
+}
