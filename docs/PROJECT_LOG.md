@@ -61,3 +61,18 @@ Detailed, app-specific record of requests, implementation work, tests, simulator
 - **Request:** Fix cramped discard controls and the native validation error shown while choosing cards after a seven.
 - **Changes:** Replaced inline inputs with a responsive two-column grid, displayed available cards per resource, and added a live selected/required counter. The submit button stays disabled until a valid exact discard count is entered, avoiding the confusing native warning for unavailable cards.
 - **Verification:** Workspace `typecheck` and `lint` passed. Browser coverage does not yet force a seven/discard state.
+
+## 2026-10-29 — Phase 2.1 Part D: visual redesign and game room UX
+
+- **Request:** Improve the board's presentation and navigation; localize game events and provide a right-column chat.
+- **Changes:** Added zoom/pan/recenter controls, preserved legal target pointer behavior during drag, animated sea texture and production tile highlights, hover probability info on number tokens, subtle placement animations, and a responsive bottom hand/build bar. Engine events now render Dutch sentences. Added a room chat message schema, 500 ms per-seat rate limit and ephemeral broadcast to connected room members. Fixed the discard form layout from the supplied screenshot: card availability, responsive grid, progress counter and guarded submit.
+- **Verification:** `pnpm -r typecheck` and `pnpm -r lint` passed after the event/chat/debug foundations. Browser tests passed for direct board clicks, full setup by two humans and one bot, bank counts, roll/robber flow, road placement, zoom/recenter, refresh/reconnect, chat and debug view hash.
+- **Limitations:** Pinch is implemented but has not been tested on a physical touch device. Chat is ephemeral. Settings include theme and system reduced-motion preference, but no sound control. Domestic offer/counter trade is still an engine/server gap.
+
+## 2026-10-29 — Phase 2.1 Part E: debug tooling
+
+- **Request:** Add enough client/server diagnostics to reproduce room and gameplay failures; document local debug operation.
+- **Changes:** Added a backtick/URL/button debug panel with connection latency, room/seat/phase, pending decisions, seed/settings, per-view hashes and mismatch warning, legal-action counts/JSON, recent action/event JSON, server error, bot status, and engine/protocol version labels. Added copy-debug-bundle and full replay download. The server registers read-only `/debug/rooms/:id` and `/api/debug/rooms/:id` only with `DEBUG=1`, returns full action log plus last 50 actions/events, and rejects unsafe bind addresses. Added structured Pino rejection/action logs, client error/crash capture, Playwright debug hash check, and Fedora instructions in README.
+- **Verification:** `pnpm -r typecheck`, `pnpm -r lint`, and Playwright passed; the debug browser check confirmed matching server/client view hashes. Full engine suite and 10,000-game sim are still to run.
+- **Known gaps:** Debug mutation helpers for forced dice, resource grants and setup skipping are deferred to keep deterministic replay intact. Pinch-to-zoom, sound controls and consent-based domestic offer/counter trade also remain open.
+- **Files:** Web debug UI; server debug endpoint and event tracking; protocol chat contract; Playwright configuration/tests; README and phase log/decision docs.

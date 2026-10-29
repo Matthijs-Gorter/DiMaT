@@ -1,4 +1,4 @@
-import type { GameAction, PlayerView, Resource } from '@dimat/engine';
+import type { GameAction, GameEvent, PlayerView, Resource } from '@dimat/engine';
 import type { BotStatus, RoomLifecycle, ServerMessage } from '@dimat/protocol';
 import './style.css';
 
@@ -13,9 +13,10 @@ const root=document.querySelector<HTMLDivElement>('#app')!;
 let view:PlayerView|undefined;
 let playerId='';let seatToken='';let roomId='';let socket:WebSocket|undefined;
 let events:string[]=[];let seats:SeatSummary[]=[];let botStatuses:BotStatus[]=[];
+let chatMessages:Array<{playerId:string;text:string;createdAt:number}>=[];
 let lifecycle:RoomLifecycle='lobby';let gameStartedReceived=false;
 let placementMode:PlacementMode=null;let pending:PendingAction|null=null;let robberChoices:GameAction[]|null=null;
-const debugMode=new URLSearchParams(location.search).get('debug')==='1';
+let debugEnabled=new URLSearchParams(location.search).get('debug')==='1';let connectionState='connecting';let latencyMs:number|null=null;let lastServerError:Record<string,unknown>|null=null;let debugData:Record<string,unknown>|null=null;
 
 const element=<K extends keyof HTMLElementTagNameMap>(tag:K,cls='',text='')=>{
   const node=document.createElement(tag);if(cls)node.className=cls;if(text)node.textContent=text;return node;
@@ -23,15 +24,46 @@ const element=<K extends keyof HTMLElementTagNameMap>(tag:K,cls='',text='')=>{
 const svgElement=(tag:string)=>document.createElementNS(SVG_NS,tag);
 function playerColor(id:string){const index=Number(id.replace(/^p/,''));return COLORS[Number.isFinite(index)?index%COLORS.length:0]!;}
 function playerName(id:string){return seats.find(seat=>seat.playerId===id)?.displayName||id;}
+const RESOURCE_NAMES:Record<string,string>={brick:'baksteen',lumber:'hout',wool:'wol',grain:'graan',ore:'erts'};
+function eventText(event:GameEvent){
+  const data=event as Record<string,unknown>,name=typeof data.playerId==='string'?playerName(data.playerId):'';
+  switch(event.type){
+    case 'settlementPlaced':return `${name} plaatste een nederzetting`;
+    case 'roadPlaced':return `${name} plaatste een weg`;
+    case 'roadBuilt':case 'roadBuiltFree':return `${name} bouwde een weg`;
+    case 'settlementBuilt':return `${name} bouwde een nederzetting`;
+    case 'cityBuilt':return `${name} bouwde een stad`;
+    case 'diceRolled':return `${name} gooide ${String(data.result)} (${Array.isArray(data.dice)?data.dice.join(' + '):''})`;
+    case 'resourcesGained':return `${name} ontving ${String(data.count)} ${RESOURCE_NAMES[String(data.resource)]??String(data.resource)}`;
+    case 'resourcesPaid':return `${name} betaalde ${String(data.count)} ${RESOURCE_NAMES[String(data.resource)]??String(data.resource)}`;
+    case 'resourceStolen':return `${playerName(String(data.toPlayerId))} stal een kaart van ${playerName(String(data.fromPlayerId))}`;
+    case 'robberMoved':return `${name} verplaatste de rover`;
+    case 'developmentCardBought':return `${name} kocht een ontwikkelingskaart`;
+    case 'knightPlayed':return `${name} speelde een ridder`;
+    case 'roadBuildingPlayed':return `${name} speelde Wegenbouw`;
+    case 'yearOfPlentyPlayed':return `${name} speelde Jaar van overvloed`;
+    case 'monopolyPlayed':return `${name} speelde Monopolie`;
+    case 'domesticTradeCompleted':return `${name} ruilde met ${playerName(String(data.partnerId))}`;
+    case 'maritimeTradeCompleted':return `${name} ruilde ${data.ratio}:1 bij de bank`;
+    case 'victoryPointRevealed':return `${name} onthulde een overwinningspunt`;
+    case 'turnEnded':return `${name} beëindigde de beurt`;
+    case 'gameWon':return `${name} heeft het spel gewonnen!`;
+    case 'productionBlocked':return `Geen ${RESOURCE_NAMES[String(data.resource)]??String(data.resource)} geproduceerd: de bank had te weinig kaarten`;
+    default:return 'Spelgebeurtenis';
+  }
+}
+function canonicalClient(value:unknown):string{if(Array.isArray(value))return `[${value.map(canonicalClient).join(',')}]`;if(value&&typeof value==='object')return `{${Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>`${JSON.stringify(key)}:${canonicalClient(item)}`).join(',')}}`;return JSON.stringify(value);}
+function clientHash(value:unknown){let hash=2166136261;for(const char of canonicalClient(value))hash=Math.imul(hash^char.charCodeAt(0),16777619);return(hash>>>0).toString(16).padStart(8,'0');}
 function errorText(code:string,message:string){
   const local:Record<string,string>={GAME_NOT_STARTED:'Het spel is nog niet gestart.',GAME_FINISHED:'Dit spel is afgelopen.',NOT_YOUR_TURN:'Je bent nog niet aan de beurt.',ILLEGAL_ACTION:'Deze actie mag nu niet.',WAITING_FOR_PLAYERS:'Wacht tot beide menselijke spelers zijn aangesloten.',ROOM_NOT_FOUND:'Deze kamer bestaat niet (meer).'};
   return local[code]??message;
 }
 function shell(){
   root.replaceChildren();const header=element('header','top');
-  header.append(element('strong','brand','DiMaT'),element('span','muted','Browser board game · online'));
+  header.append(element('strong','brand','DiMaT'),element('span',`connection-indicator state-${connectionState}`,`Browser board game · ${roomId?connectionState:'offline'}`));
   const theme=element('button','','Licht/donker');theme.onclick=()=>{const next=document.documentElement.dataset.theme==='light'?'dark':'light';document.documentElement.dataset.theme=next;localStorage.setItem('dimat-theme',next);};
-  header.append(theme);root.append(header);const main=element('main');root.append(main);return main;
+  const debug=element('button',debugEnabled?'selected':'','Debug');debug.setAttribute('aria-pressed',String(debugEnabled));debug.onclick=()=>{debugEnabled=!debugEnabled;const url=new URL(location.href);if(debugEnabled)url.searchParams.set('debug','1');else url.searchParams.delete('debug');history.replaceState({},'',url);render();void refreshDebugData();};
+  header.append(theme,debug);root.append(header);const main=element('main');root.append(main);return main;
 }
 function lobby(message='Maak een kamer of gebruik een uitnodigingslink.'){
   const main=shell(),card=element('section','card lobby');
@@ -53,20 +85,23 @@ function lobby(message='Maak een kamer of gebruik een uitnodigingslink.'){
 function connect(displayName:string){
   socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`);
   (window as Window&{dimatSend?:WebSocket}).dimatSend=socket;
-  socket.onopen=()=>socket?.send(JSON.stringify({type:'join',roomId,seatToken:seatToken||undefined,displayName}));
+  socket.onopen=()=>{connectionState='connected';socket?.send(JSON.stringify({type:'join',roomId,seatToken:seatToken||undefined,displayName}));void measureLatency();};
   socket.onmessage=event=>{
     const message=JSON.parse(event.data) as ServerMessage;
-    if(message.type==='error'){pending=null;robberChoices=null;events.unshift(`Fout ${message.code}: ${errorText(message.code,message.message)}`);render();}
+    if(message.type==='error'){pending=null;robberChoices=null;lastServerError={code:message.code,message:message.message,details:message.details};events.unshift(`Fout ${message.code}: ${errorText(message.code,message.message)}`);render();}
     else if(message.type==='joined'){seatToken=message.seatToken;playerId=message.playerId;lifecycle=message.lifecycle;gameStartedReceived=false;localStorage.setItem(`dimat-seat-${roomId}`,seatToken);render();}
-    else if(message.type==='gameStarted'||message.type==='gameFinished'){view=message.view;lifecycle=message.type==='gameFinished'?'finished':'started';gameStartedReceived=message.type==='gameStarted';render();}
+    else if(message.type==='gameStarted'||message.type==='gameFinished'){view=message.view;lifecycle=message.type==='gameFinished'?'finished':'started';gameStartedReceived=message.type==='gameStarted';render();void refreshDebugData();}
     else if(message.type==='update'){
-      if(view)view={...view,...message.patch};events=[...message.events.map(item=>String(item.type)),...events].slice(0,50);
+      if(view)view={...view,...message.patch};events=[...message.events.map(eventText),...events].slice(0,50);
       if(pending&&message.clientSequence===pending.sequence){pending=null;robberChoices=null;placementMode=null;}
-      if(view?.winnerId){lifecycle='finished';gameStartedReceived=false;}render();
-    }else if(message.type==='room'){seats=message.seats;botStatuses=message.botStatuses;lifecycle=message.lifecycle;if(lifecycle!=='started')gameStartedReceived=false;render();}
+      if(view?.winnerId){lifecycle='finished';gameStartedReceived=false;}render();void refreshDebugData();
+    }else if(message.type==='chat'){chatMessages=[...chatMessages,{playerId:message.playerId,text:message.text,createdAt:message.createdAt}].slice(-100);render();}
+    else if(message.type==='room'){seats=message.seats;botStatuses=message.botStatuses;lifecycle=message.lifecycle;if(lifecycle!=='started')gameStartedReceived=false;render();void refreshDebugData();}
   };
-  socket.onclose=()=>{gameStartedReceived=false;events.unshift('Verbinding verbroken. Vernieuw of gebruik dezelfde uitnodigingslink om opnieuw te verbinden.');render();};
+  socket.onclose=()=>{gameStartedReceived=false;connectionState='disconnected';events.unshift('Verbinding verbroken. Vernieuw of gebruik dezelfde uitnodigingslink om opnieuw te verbinden.');render();};
 }
+async function measureLatency(){try{const start=performance.now();const response=await fetch(`/api/rooms/${roomId}`);if(response.ok)latencyMs=Math.round(performance.now()-start);}catch{latencyMs=null;}if(debugEnabled)render();}
+async function refreshDebugData(){if(!debugEnabled||!roomId)return;try{const response=await fetch(`/api/debug/rooms/${roomId}?playerId=${encodeURIComponent(playerId)}`);debugData=response.ok?await response.json() as Record<string,unknown>:null;if(debugData&&view){const serverHash=debugData.viewHash;debugData.clientViewHash=clientHash(view);debugData.viewHashMatches=serverHash===debugData.clientViewHash;}render();}catch{debugData=null;}}
 function sendAction(action:GameAction,targetKey?:string){
   if(!gameStartedReceived||lifecycle!=='started'||pending||!view?.legalActions.some(legal=>JSON.stringify(legal)===JSON.stringify(action)))return;
   if(socket?.readyState!==WebSocket.OPEN){events.unshift('Verbinding is nog niet klaar.');render();return;}
@@ -109,11 +144,11 @@ function drawBoard(host:HTMLElement,v:PlayerView){
   if(mode==='robber')for(const action of v.legalActions)if(action.type==='moveRobber'||action.type==='playKnight'){const tile='tile'in action?action.tile:-1;const list=tileTargets.get(tile)??[];list.push(action);tileTargets.set(tile,list);}
 
   for(const tile of v.board.tiles){
-    const polygon=svgElement('polygon'),points=pointList(v,tile.vertices);polygon.setAttribute('points',points.map(p=>p.join(',')).join(' '));polygon.setAttribute('class',`hex terrain-${tile.kind}${tile.id===v.robberTile?' robber-tile':''}`);polygon.dataset.tile=String(tile.id);
+    const rolled=v.lastRoll?v.lastRoll[0]+v.lastRoll[1]:null;const produces=tile.number!==null&&tile.number===rolled;const polygon=svgElement('polygon'),points=pointList(v,tile.vertices);polygon.setAttribute('points',points.map(p=>p.join(',')).join(' '));polygon.setAttribute('class',`hex terrain-${tile.kind}${tile.id===v.robberTile?' robber-tile':''}${produces?' producing':''}`);polygon.dataset.tile=String(tile.id);
     const title=svgElement('title');title.textContent=tile.number?`${tile.kind}: ${tile.number}, ${PIPS[tile.number]} pip(s)`:`${tile.kind}`;polygon.append(title);tileLayer.append(polygon);
     const [x,y]=tileCenter(tile.q,tile.r);drawTerrainIcon(tileLayer,tile.kind,x,y+.58);
     if(tile.number){
-      const token=svgElement('circle');token.setAttribute('cx',String(x));token.setAttribute('cy',String(y));token.setAttribute('r','.73');token.setAttribute('class',`number-token${tile.number===6||tile.number===8?' hot':''}`);tileLayer.append(token);
+      const token=svgElement('circle');token.setAttribute('cx',String(x));token.setAttribute('cy',String(y));token.setAttribute('r','.73');token.setAttribute('class',`number-token${tile.number===6||tile.number===8?' hot':''}`);const probability=svgElement('title');probability.textContent=`Kans: ${PIPS[tile.number]}/36 (${((PIPS[tile.number]??0)/36*100).toFixed(1)}%)`;token.append(probability);tileLayer.append(token);
       const number=svgElement('text');number.setAttribute('x',String(x));number.setAttribute('y',String(y+.16));number.setAttribute('text-anchor','middle');number.setAttribute('class','number-label');number.textContent=String(tile.number);tileLayer.append(number);
       const count=PIPS[tile.number]??0;for(let pip=0;pip<count;pip++){const dot=svgElement('circle');dot.setAttribute('cx',String(x+(pip-(count-1)/2)*.16));dot.setAttribute('cy',String(y+.43));dot.setAttribute('r','.045');dot.setAttribute('class','pip-dot');tileLayer.append(dot);}
     }
@@ -137,7 +172,15 @@ function drawBoard(host:HTMLElement,v:PlayerView){
     if(building){const group=svgElement('g');group.setAttribute('class',`building-piece player-${building.owner}`);group.setAttribute('transform',`translate(${x},${y})`);if(building.kind==='settlement'){const house=svgElement('path');house.setAttribute('d','M-.48 .02 L0 -.5 L.48 .02 V.47 H-.48 Z');group.append(house);}else{const house=svgElement('path');house.setAttribute('d','M-.55 -.25 L-.22 -.55 L.12 -.25 L.4 -.48 L.55 -.28 V.48 H-.55 Z');group.append(house);const door=svgElement('rect');door.setAttribute('x','-.12');door.setAttribute('y','.12');door.setAttribute('width','.24');door.setAttribute('height','.36');door.setAttribute('class','building-door');group.append(door);}pieceLayer.append(group);}
     const action=vertexTargets.get(vertex.id);if(action){const glow=svgElement('circle');glow.setAttribute('cx',String(x));glow.setAttribute('cy',String(y));glow.setAttribute('r','.43');glow.setAttribute('class',`legal-vertex-glow${pending?.targetKey===`vertex-${vertex.id}`?' pending':''}`);targetLayer.append(glow);const hit=svgElement('circle');hit.setAttribute('cx',String(x));hit.setAttribute('cy',String(y));hit.setAttribute('r','1.05');hit.setAttribute('fill','transparent');hit.setAttribute('pointer-events','all');hit.setAttribute('class',`board-target spot legal legal-vertex${pending?.targetKey===`vertex-${vertex.id}`?' pending':''}`);hit.dataset.targetKey=`vertex-${vertex.id}`;hit.addEventListener('click',()=>sendAction(action,`vertex-${vertex.id}`));hit.addEventListener('pointerenter',()=>showPiecePreview(previewLayer,action.type==='buildCity'?'city':'settlement',[x,y],playerColor(playerId)));hit.addEventListener('pointerleave',()=>previewLayer.replaceChildren());targetLayer.append(hit);}
   }
-  svg.append(tileLayer,roadLayer,harborLayer,pieceLayer,targetLayer,previewLayer);host.replaceChildren(svg);
+  svg.append(tileLayer,roadLayer,harborLayer,pieceLayer,targetLayer,previewLayer);let box=[-10,-9,20,18],drag:{x:number;y:number;box:number[];moved:boolean}|null=null;const pointers=new Map<number,{x:number;y:number}>();let pinchStart:{distance:number;box:number[]}|null=null;
+  const controls=element('div','board-controls'),zoomOut=element('button','','−'),zoomLabel=element('span','muted','100%'),zoomIn=element('button','','+'),center=element('button','','Hercentreer');zoomOut.setAttribute('aria-label','Uitzoomen');zoomIn.setAttribute('aria-label','Inzoomen');
+  const setZoom=(factor:number)=>{const width=Math.max(13,Math.min(30,box[2]!*factor)),height=width*.9,cx=box[0]!+box[2]!/2,cy=box[1]!+box[3]!/2;box=[cx-width/2,cy-height/2,width,height];svg.setAttribute('viewBox',box.join(' '));zoomLabel.textContent=`${Math.round(20/width*100)}%`;};
+  zoomOut.onclick=()=>setZoom(1.15);zoomIn.onclick=()=>setZoom(.87);center.onclick=()=>{box=[-10,-9,20,18];svg.setAttribute('viewBox',box.join(' '));zoomLabel.textContent='100%';};controls.append(zoomOut,zoomLabel,zoomIn,center);
+  svg.addEventListener('wheel',event=>{event.preventDefault();setZoom(event.deltaY>0?1.08:.92);},{passive:false});
+  svg.addEventListener('pointerdown',event=>{if(event.button!==0||event.target instanceof Element&&event.target.closest('.board-target'))return;pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});svg.setPointerCapture(event.pointerId);if(pointers.size===2){const [a,b]=[...pointers.values()];pinchStart={distance:Math.hypot(a!.x-b!.x,a!.y-b!.y),box:[...box]};drag=null;return;}drag={x:event.clientX,y:event.clientY,box:[...box],moved:false};});
+  svg.addEventListener('pointermove',event=>{if(pointers.has(event.pointerId))pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});if(pinchStart&&pointers.size>=2){const [a,b]=[...pointers.values()],distance=Math.max(1,Math.hypot(a!.x-b!.x,a!.y-b!.y)),start=pinchStart.box,width=Math.max(13,Math.min(30,start[2]!*pinchStart.distance/distance)),height=width*.9;box=[start[0]!+(start[2]!-width)/2,start[1]!+(start[3]!-height)/2,width,height];svg.setAttribute('viewBox',box.join(' '));zoomLabel.textContent=`${Math.round(20/width*100)}%`;return;}if(!drag)return;const dx=event.clientX-drag.x,dy=event.clientY-drag.y;if(Math.hypot(dx,dy)>4)drag.moved=true;if(!drag.moved)return;const rect=svg.getBoundingClientRect(),start=drag.box;box=[start[0]!-dx*start[2]!/rect.width,start[1]!-dy*start[3]!/rect.height,start[2]!,start[3]!];svg.setAttribute('viewBox',box.join(' '));});
+  svg.addEventListener('pointerup',event=>{pointers.delete(event.pointerId);if(pointers.size<2)pinchStart=null;if(svg.hasPointerCapture(event.pointerId))svg.releasePointerCapture(event.pointerId);drag=null;});svg.addEventListener('pointercancel',event=>{pointers.delete(event.pointerId);pinchStart=null;drag=null;});
+  host.replaceChildren(controls,svg);
 }
 function showPiecePreview(layer:SVGElement,kind:'road'|'settlement'|'city',point:[number,number],color:string,edge?:[[number,number],[number,number]]){
   layer.replaceChildren();if(kind==='road'&&edge){const preview=createLine(layer,edge[0],edge[1],'piece-preview');preview.setAttribute('stroke',color);preview.setAttribute('stroke-width','.38');return;}
@@ -168,7 +211,17 @@ function renderBuildBar(viewState:PlayerView){
   return bar;
 }
 function renderDebugActions(viewState:PlayerView){
-  if(!debugMode)return null;const details=element('details','debug-actions'),summary=element('summary','','Debug: handmatige actie');details.append(summary);
+  if(!debugEnabled)return null;const details=element('details','debug-actions'),summary=element('summary','','Debugpaneel');details.append(summary);
+  const grouped=viewState.legalActions.reduce<Record<string,number>>((counts,action)=>{counts[action.type]=(counts[action.type]??0)+1;return counts;},{}),localHash=clientHash(viewState);
+  const diagnostic={connection:connectionState,latencyMs,roomId,seatToken:seatToken?'stored':'missing',playerId,phase:viewState.phase,activePlayerId:viewState.activePlayerId,pendingAction:pending,pendingDecisions:debugData?.pendingDiscards??[],seed:viewState.seed,settings:viewState.settings,clientViewHash:localHash,serverViewHash:debugData?.viewHash??'unavailable (run server with DEBUG=1)',viewHashMatches:debugData?.viewHash===undefined?'unavailable':debugData.viewHash===localHash,legalActionCounts:grouped,lastServerError,botStatuses,engineVersion:'1',protocolVersion:'1'};
+  const status=element('p',debugData?.viewHash&&debugData.viewHash!==localHash?'debug-mismatch':'muted',`Verbinding: ${connectionState}${latencyMs!==null?` · ${latencyMs} ms`:''} · stoel ${playerId} · ${viewState.phase}`);details.append(status);
+  if(debugData?.viewHash&&debugData.viewHash!==localHash)details.append(element('p','debug-mismatch','Waarschuwing: server- en clientweergave verschillen.'));
+  const snapshot=element('details','debug-section'),snapshotTitle=element('summary','','Sessie en toestand');snapshot.append(snapshotTitle);const snapshotJson=element('pre','debug-json',JSON.stringify(diagnostic,null,2));snapshot.append(snapshotJson);details.append(snapshot);
+  const actionSummary=element('details','debug-section'),actionTitle=element('summary','',`Legale acties (${viewState.legalActions.length})`);actionSummary.append(actionTitle);actionSummary.append(element('pre','debug-json',JSON.stringify({counts:grouped,actions:viewState.legalActions},null,2)));details.append(actionSummary);
+  const historySummary=element('details','debug-section'),historyTitle=element('summary','','Laatste acties en gebeurtenissen');historySummary.append(historyTitle);historySummary.append(element('pre','debug-json',JSON.stringify({actions:debugData?.lastActions??[],events:debugData?.lastEvents??events.slice(0,50)},null,2)));details.append(historySummary);
+  const botSummary=element('details','debug-section'),botTitle=element('summary','','Botstatus');botSummary.append(botTitle);botSummary.append(element('pre','debug-json',JSON.stringify(debugData?.players??botStatuses,null,2)));details.append(botSummary);
+  if(lastServerError)details.append(element('pre','debug-json',JSON.stringify(lastServerError,null,2)));
+  const copy=element('button','','Kopieer debugbundel'),download=element('button','','Download replay');copy.onclick=async()=>{const bundle={diagnostic,server:debugData,view:viewState,lastEvents:events,lastServerError,versions:{engine:'1',protocol:'1'},userAgent:navigator.userAgent};const json=JSON.stringify(bundle,null,2);try{await navigator.clipboard.writeText(json);copy.textContent='Debugbundel gekopieerd ✓';}catch{const temp=element('textarea','copy-fallback');temp.value=json;document.body.append(temp);temp.select();document.execCommand('copy');temp.remove();copy.textContent='Debugbundel gekopieerd ✓';}};download.disabled=!debugData||!Array.isArray(debugData.actions);download.onclick=()=>{if(!debugData)return;const replay={seed:viewState.seed,settings:viewState.settings,actions:debugData.actions};const url=URL.createObjectURL(new Blob([JSON.stringify(replay,null,2)],{type:'application/json'}));const link=element('a');link.href=url;link.download=`dimat-${roomId}-replay.json`;document.body.append(link);link.click();link.remove();URL.revokeObjectURL(url);};details.append(copy,download);
   const select=element('select','actions');select.append(new Option('Kies een legale actie…',''));
   for(const action of viewState.legalActions){const label=action.type+('vertex'in action?` · vertex ${action.vertex}`:'edge'in action?` · edge ${action.edge}`:'tile'in action?` · tile ${action.tile}`:'');select.append(new Option(label,JSON.stringify(action)));}
   const submit=element('button','','Verstuur actie');submit.disabled=!!pending;submit.onclick=()=>{if(select.value)sendAction(JSON.parse(select.value) as GameAction);};details.append(select,submit);return details;
@@ -209,6 +262,10 @@ function renderTradePanel(viewState:PlayerView){
   const seen=new Set<string>();for(const action of bankTrades){const key=`${action.give}:${action.receive}`;if(seen.has(key))continue;seen.add(key);const harbors=viewState.board.vertices.filter(vertex=>vertex.harbor&&viewState.buildings[vertex.id]?.owner===Number(viewState.playerId.slice(1))).map(vertex=>vertex.harbor!);const ratio=harbors.some(harbor=>harbor.kind===action.give)?2:harbors.some(harbor=>harbor.kind==='generic')?3:4;panel.append(actionButton(`${ratio} ${action.give} → 1 ${action.receive}`,action));}
   return panel;
 }
+function renderChat(){
+  const panel=element('section','card chat-panel');panel.append(element('h2','','Chat'));const transcript=element('div','chat-transcript');transcript.setAttribute('aria-live','polite');for(const message of chatMessages){const line=element('p',`chat-line player-${Number(message.playerId.slice(1))}`);line.append(element('strong','',playerName(message.playerId)),document.createTextNode(`: ${message.text}`));transcript.append(line);}panel.append(transcript);
+  const form=element('form','chat-form'),input=element('input');input.maxLength=240;input.placeholder='Typ een bericht…';input.setAttribute('aria-label','Chatbericht');const send=element('button','primary','Verstuur');send.type='submit';form.append(input,send);form.onsubmit=event=>{event.preventDefault();const text=input.value.trim();if(!text||socket?.readyState!==WebSocket.OPEN)return;socket.send(JSON.stringify({type:'chat',text}));input.value='';input.focus();};panel.append(form);return panel;
+}
 function render(){
   if(!roomId){lobby();return;}
   const main=shell();main.dataset.gameLifecycle=lifecycle;const header=element('div','roomhead');
@@ -226,16 +283,19 @@ function render(){
   const grid=element('div','gamegrid'),board=element('section','card boardcard');drawBoard(board,view);
   const side=element('aside','card game-sidebar');side.append(element('h2','','Spel'),element('p','muted',`Fase: ${view.phase} · Beurt: ${playerName(view.activePlayerId)}`));
   const dice=element('div','dice');if(view.lastRoll){dice.append(element('span','die',String(view.lastRoll[0])),element('span','die',String(view.lastRoll[1])),element('strong','dice-total',`= ${view.lastRoll[0]+view.lastRoll[1]}`));}else dice.append(element('span','muted','Dobbelstenen nog niet gegooid'));side.append(dice);
-  const hand=element('div','hand');for(const resource of ['brick','lumber','wool','grain','ore'] as Resource[]){const cell=element('div','resource');cell.append(document.createTextNode(`${RESOURCE_ICON[resource as keyof typeof RESOURCE_ICON]} ${resource}`),element('b','',String(view.ownResources[resource])));hand.append(cell);}side.append(hand);
+  const hand=element('div','hand');for(const resource of ['brick','lumber','wool','grain','ore'] as Resource[]){const cell=element('div','resource');cell.append(document.createTextNode(`${RESOURCE_ICON[resource as keyof typeof RESOURCE_ICON]} ${resource}`),element('b','',String(view.ownResources[resource])));hand.append(cell);}
   const bank=element('section','bank-panel');bank.append(element('h2','','Bank · ontwikkelingsstapel'));const bankCounts=element('div','hand');for(const resource of ['brick','lumber','wool','grain','ore'] as Resource[]){const cell=element('div','resource');cell.append(document.createTextNode(`${RESOURCE_ICON[resource as keyof typeof RESOURCE_ICON]} ${resource}`),element('b','',String(view.bank[resource])));bankCounts.append(cell);}bank.append(bankCounts,element('p','muted',`${view.developmentCardsRemaining} ontwikkelingskaarten over`));side.append(bank,renderDevelopmentHand(view));
   const players=element('div','players');for(const player of view.players){const isActive=player.id===view.activePlayerId,status=botStatuses.find(item=>item.playerId===player.id);const panel=element('article',`player-panel player-${Number(player.id.slice(1))}${isActive?' active':''}`);panel.append(element('strong','',`${playerName(player.id)}${player.id===playerId?' (jij)':''}`));const badges=element('div','player-badges');if(isActive)badges.append(element('span','pill','Aan zet'));if(seats.find(seat=>seat.playerId===player.id)?.bot)badges.append(element('span','pill',status?.status==='thinking'?'Bot denkt…':'Bot'));if(player.hasLongestRoad)badges.append(element('span','pill','Langste handelsroute'));if(player.hasLargestArmy)badges.append(element('span','pill','Grootste riddermacht'));panel.append(badges,element('p','',`${player.visibleVictoryPoints} VP zichtbaar · ${player.resourceCount} grondstofkaarten · ${player.developmentCardCount} ontwikkelingskaarten`),element('p','',`${player.knightsPlayed} ridders · route ${player.longestRoadLength} · ${player.roadsLeft} wegen · ${player.settlementsLeft} nederzettingen · ${player.citiesLeft} steden`));players.append(panel);}side.append(players);
   const picker=renderRobberPicker();if(picker)side.append(picker);
   const discard=renderDiscardPrompt(view);if(discard)side.append(discard);const trade=renderTradePanel(view);if(trade)side.append(trade);
   const debug=renderDebugActions(view);if(debug)side.append(debug);
-  side.append(element('h2','','Gebeurtenissen'));for(const line of events.filter(item=>!item.startsWith('Fout ')).slice(0,10))side.append(element('p','event',line));
-  grid.append(board,side);main.append(grid,renderBuildBar(view));
+  side.append(element('h2','','Gebeurtenissen'));for(const line of events.filter(item=>!item.startsWith('Fout ')).slice(0,10))side.append(element('p','event',line));side.append(renderChat());
+  grid.append(board,side);const bottom=element('section','bottom-bar');bottom.append(element('h2','','Jouw hand'),hand,renderBuildBar(view));main.append(grid,bottom);
 }
 
 document.documentElement.dataset.theme=localStorage.getItem('dimat-theme')??'dark';
 const savedRoom=location.pathname.split('/')[2];roomId=savedRoom??'';
 if(roomId){seatToken=localStorage.getItem(`dimat-seat-${roomId}`)??'';const name=localStorage.getItem('dimat-name')??'';if(name)connect(name);else lobby('Vul je naam in om aan te sluiten.');}else lobby();
+document.addEventListener('keydown',event=>{if(event.key!=='`'||event.ctrlKey||event.metaKey||event.altKey)return;const target=event.target;if(target instanceof HTMLInputElement||target instanceof HTMLTextAreaElement||target instanceof HTMLSelectElement)return;debugEnabled=!debugEnabled;const url=new URL(location.href);if(debugEnabled)url.searchParams.set('debug','1');else url.searchParams.delete('debug');history.replaceState({},'',url);render();void refreshDebugData();});
+window.addEventListener('error',event=>{const message=event.error instanceof Error?event.error.message:event.message;root.replaceChildren();const card=element('section','card fatal-error');card.append(element('h1','','DiMaT liep vast'),element('p','',message));const copy=element('button','','Kopieer foutinformatie');copy.onclick=async()=>{const bundle=JSON.stringify({message,stack:event.error instanceof Error?event.error.stack:undefined,roomId,playerId,view,userAgent:navigator.userAgent},null,2);try{await navigator.clipboard.writeText(bundle);copy.textContent='Gekopieerd ✓';}catch{copy.textContent='Kopiëren niet beschikbaar';}};root.append(card);});
+window.addEventListener('unhandledrejection',event=>{lastServerError={code:'CLIENT_UNHANDLED_REJECTION',message:String(event.reason)};events.unshift(`Fout CLIENT_UNHANDLED_REJECTION: ${String(event.reason)}`);if(roomId)render();});

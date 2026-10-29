@@ -42,3 +42,17 @@
 - `PlayerView` exposes bank resource counts, remaining deck size, seed/settings, turn state, and public player metrics. It exposes only each opponent's resource/development-card totals, never card identities or resource distribution.
 - A player's public VP omits unrevealed victory-point cards; own card details remain in `ownDevelopmentCards`.
 - The base engine models domestic trade as an already-accepted transfer. The UI must not present that as a consent-based offer until the server has an offer/accept protocol; bank/port trades remain immediate legal actions.
+
+## 2026-10-29 — Phase 2.1 Part D: visual surface and collaboration
+
+- Keep the board renderer as original SVG/CSS. Legal target layers remain above all pieces and use area-based road hit polygons; pointer drag starts only on non-target board space so it cannot swallow a placement click.
+- Board navigation supports wheel and pinch zoom, drag panning and recentering. Browser coverage currently exercises button zoom/recenter; touch pinch still needs device-level verification.
+- Room chat is ephemeral, rate-limited and broadcast only to currently connected seats. It is not persisted in the game action log.
+- Event names are translated in the client from typed engine events; unresolved/unexpected events use a safe generic Dutch label instead of leaking internal event identifiers.
+
+## 2026-10-29 — Phase 2.1 Part E: diagnostics
+
+- The debug route is registered only under `DEBUG=1`; that mode defaults to `HOST=127.0.0.1` and refuses non-loopback/non-Tailscale bind addresses. The web proxy exposes the same read-only data below `/api/debug/rooms/:id`.
+- A debug bundle intentionally includes the full action log and the requesting seat's view. It can reveal hidden information and should be shared only with trusted collaborators.
+- State hashes use a stable FNV-1a hash over canonical JSON for both server and client views. This is intended to spot accidental view mismatches, not to provide cryptographic integrity.
+- Debug-only dice/resource/setup mutation helpers are deferred: directly mutating game state without replayable actions would invalidate the persisted deterministic replay.

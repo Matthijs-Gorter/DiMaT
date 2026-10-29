@@ -1,4 +1,4 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
@@ -7,8 +7,8 @@ import { apply, createGame, legalActions, replayGame, viewFor, type GameAction, 
 import { chooseRandomAction } from '@dimat/bots';
 import { clientMessageSchema, createRoomSchema, type BotStatus, type RoomLifecycle, type ServerMessage } from '@dimat/protocol';
 
-type Seat={playerId:string;displayName:string;token:string;bot:boolean;level:0|1|2;lastSequence:number;botStatus?:BotStatus['status'];botReason?:string;decisionMs?:number;socket?:WebSocket};
-type Room={id:string;state:GameState;settings:GameSettings;actions:GameAction[];seats:Seat[];lifecycle:RoomLifecycle;seed:number};
+type Seat={playerId:string;displayName:string;token:string;bot:boolean;level:0|1|2;lastSequence:number;lastChatAt?:number;botStatus?:BotStatus['status'];botReason?:string;decisionMs?:number;socket?:WebSocket};
+type Room={id:string;state:GameState;settings:GameSettings;actions:GameAction[];recentEvents:GameEvent[];seats:Seat[];lifecycle:RoomLifecycle;seed:number};
 type StructuredError={code:string;message:string;details?:Record<string,unknown>};
 
 class RoomError extends Error {
@@ -37,7 +37,7 @@ app.post('/api/rooms',async(req,reply)=>{
     {playerId:'p1',displayName:'',token:token(),bot:false,level:0,lastSequence:-1}
   ];
   for(let i=2;i<playerCount;i++)seats.push({playerId:`p${i}`,displayName:`Bot ${i-1}`,token:token(),bot:true,level:i===2?1:2,lastSequence:-1});
-  const room:Room={id,state:createGame(seed,settings),settings,actions:[],seats,lifecycle:'lobby',seed};
+  const room:Room={id,state:createGame(seed,settings),settings,actions:[],recentEvents:[],seats,lifecycle:'lobby',seed};
   rooms.set(id,room);persist(room);
   app.log.info({roomId:id,seatId:'p0',actionType:'createRoom',outcome:'accepted'},'room created');
   return {roomId:id,seatToken:seats[0]!.token,playerId:'p0',invite:`/play/${id}`};
@@ -62,11 +62,11 @@ function sendPrivateView(room:Room,seat:Seat){
   const msg:ServerMessage=room.lifecycle==='finished'?{type:'gameFinished',roomId:room.id,view:viewFor(room.state,seat.playerId)}:{type:'gameStarted',roomId:room.id,view:viewFor(room.state,seat.playerId)};
   send(seat.socket,msg);
 }
-function broadcastUpdate(room:Room,events:GameEvent[],sequence:number,previous:Map<string,PlayerView>,clientSequence?:number){
+function broadcastUpdate(room:Room,events:GameEvent[],sequence:number,previous:Map<string,PlayerView>,clientSequence?:number,clientPlayerId?:string){
   for(const seat of room.seats)if(!seat.bot){
     const next=viewFor(room.state,seat.playerId),old=previous.get(seat.playerId);const patch:Partial<PlayerView>={};
     if(old)for(const key of Object.keys(next) as Array<keyof PlayerView>)if(JSON.stringify(old[key])!==JSON.stringify(next[key]))Object.assign(patch,{[key]:next[key]});
-    send(seat.socket,{type:'update',patch,events:events.filter(e=>!e.privateTo||e.privateTo===seat.playerId),sequence,...(clientSequence!==undefined?{clientSequence}:{})});
+    send(seat.socket,{type:'update',patch,events:events.filter(e=>!e.privateTo||e.privateTo===seat.playerId),sequence,...(clientSequence!==undefined&&seat.playerId===clientPlayerId?{clientSequence}:{})});
   }
 }
 function canonical(value:unknown):string{
@@ -74,6 +74,14 @@ function canonical(value:unknown):string{
   if(value&&typeof value==='object')return `{${Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,v])=>`${JSON.stringify(key)}:${canonical(v)}`).join(',')}}`;
   return JSON.stringify(value);
 }
+function stateHash(value:unknown){let hash=2166136261;for(const char of canonical(value))hash=Math.imul(hash^char.charCodeAt(0),16777619);return(hash>>>0).toString(16).padStart(8,'0');}
+const debugRoom=async(req:FastifyRequest,reply:FastifyReply)=>{
+  const {id}=req.params as {id:string},query=req.query as {playerId?:string},room=rooms.get(id);if(!room)return reply.code(404).send({code:'ROOM_NOT_FOUND',message:'Room not found.'});
+  const playerId=query.playerId??room.state.players[room.state.activePlayer]!.id,view=room.state.players.some(player=>player.id===playerId)?viewFor(room.state,playerId):null;
+  const actionCounts=view?.legalActions.reduce<Record<string,number>>((counts,action)=>{counts[action.type]=(counts[action.type]??0)+1;return counts;},{});
+  return {roomId:id,lifecycle:room.lifecycle,seed:room.seed,settings:room.settings,phase:room.state.phase,activePlayerId:room.state.players[room.state.activePlayer]?.id??null,pendingDiscards:room.state.pendingDiscards.map(index=>room.state.players[index]?.id),robberTile:room.state.robberTile,lastRoll:room.state.lastRoll,stateHash:stateHash(room.state),playerId,viewHash:view?stateHash(view):null,actionCounts,players:room.seats.map(seat=>({playerId:seat.playerId,displayName:seat.displayName,bot:seat.bot,status:seat.bot?seat.botStatus??'idle':undefined,reason:seat.botReason,decisionMs:seat.decisionMs})),actions:room.actions,lastActions:room.actions.slice(-50),lastEvents:room.recentEvents.slice(-50)};
+};
+if(process.env.DEBUG==='1'){app.get('/debug/rooms/:id',debugRoom);app.get('/api/debug/rooms/:id',debugRoom);}
 function transition(room:Room,action:GameAction,outcome:'human'|'bot'='human',clientSequence?:number){
   if(room.lifecycle!=='started')throw new RoomError('GAME_NOT_STARTED','The game has not started.',{lifecycle:room.lifecycle});
   const legal=legalActions(room.state,action.playerId);
@@ -84,9 +92,9 @@ function transition(room:Room,action:GameAction,outcome:'human'|'bot'='human',cl
     throw new RoomError(code,isExpectedSeat?'That action is not legal in the current state.':'It is not this player’s turn.',{phase:room.state.phase,activePlayerId:expected,actionType:action.type});
   }
   const previous=new Map(room.seats.filter(s=>!s.bot).map(s=>[s.playerId,viewFor(room.state,s.playerId)]));
-  const result=apply(room.state,action);room.state=result.state;room.actions.push(action);
+  const result=apply(room.state,action);room.state=result.state;room.actions.push(action);room.recentEvents.push(...result.events);room.recentEvents=room.recentEvents.slice(-50);
   if(room.state.phase==='finished')room.lifecycle='finished';
-  persist(room);broadcastUpdate(room,result.events,room.actions.length-1,previous,clientSequence);
+  persist(room);broadcastUpdate(room,result.events,room.actions.length-1,previous,clientSequence,action.playerId);
   if(room.lifecycle==='finished'){broadcastRoom(room);for(const seat of room.seats)sendPrivateView(room,seat);}
   app.log.info({roomId:room.id,seatId:action.playerId,actionType:action.type,outcome:'accepted',actor:outcome,actionIndex:room.actions.length-1},'game action accepted');
 }
@@ -157,6 +165,11 @@ async function handleMessage(ws:WebSocket,raw:string,connection:{room?:Room;seat
       if(connection.seat.playerId!=='p0')throw new RoomError('NOT_ROOM_HOST','Only the room host can start the game.');
       startRoom(connection.room);return;
     }
+    if(parsed.data.type==='chat'){
+      const {room,seat}=connection;if(!room||!seat)throw new RoomError('NOT_IN_ROOM','Join a room before chatting.');
+      const now=Date.now();if(now-(seat.lastChatAt??0)<500)throw new RoomError('CHAT_RATE_LIMIT','Please wait before sending another message.');seat.lastChatAt=now;
+      const chat:ServerMessage={type:'chat',playerId:seat.playerId,text:parsed.data.text,createdAt:now};for(const recipient of room.seats)if(recipient.socket)send(recipient.socket,chat);return;
+    }
     if(parsed.data.type==='action'){
       const {room,seat}=connection;
       if(!room||!seat)throw new RoomError('NOT_IN_ROOM','Join a room before sending game actions.');
@@ -179,7 +192,9 @@ async function main(){
     ws.on('message',raw=>{void handleMessage(ws,raw.toString(),connection);});
     ws.on('close',()=>{if(connection.seat){connection.seat.socket=undefined;if(connection.room)persist(connection.room);}});
   });
-  const port=Number(process.env.PORT??3000);await app.listen({port,host:'0.0.0.0'});
+  const debug=process.env.DEBUG==='1',host=process.env.HOST??(debug?'127.0.0.1':'0.0.0.0');
+  const tailnet=/^100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host)||/^fd7a:/i.test(host);if(debug&&!['127.0.0.1','::1','localhost'].includes(host)&&!tailnet)throw new Error('DEBUG=1 requires HOST to be localhost or a Tailscale address.');
+  const port=Number(process.env.PORT??3000);await app.listen({port,host});
   for(const room of rooms.values())if(room.lifecycle==='started')void driveBots(room);
 }
 void main();
@@ -192,6 +207,6 @@ export function restoreSavedGames(){
     const saved=JSON.parse(row.seats) as Array<Omit<Seat,'socket'>>;
     const seats=saved.map(s=>({...s,lastSequence:s.lastSequence??-1,...(s.bot?{botStatus:'idle' as const}:{})}));
     const lifecycle:RoomLifecycle=state.phase==='finished'?'finished':row.lifecycle==='lobby'&&actions.length>0?'started':row.lifecycle;
-    rooms.set(row.id,{id:row.id,state,settings,actions,seats,lifecycle,seed:row.seed});
+    rooms.set(row.id,{id:row.id,state,settings,actions,recentEvents:[],seats,lifecycle,seed:row.seed});
   }
 }

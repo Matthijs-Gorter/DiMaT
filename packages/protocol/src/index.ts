@@ -5,6 +5,7 @@ export const createRoomSchema = z.object({displayName:z.string().trim().min(1).m
 export const clientMessageSchema = z.discriminatedUnion('type',[
   z.object({type:z.literal('join'),roomId:z.string().min(4).max(12),seatToken:z.string().optional(),displayName:z.string().trim().min(1).max(32)}),
   z.object({type:z.literal('action'),sequence:z.number().int().nonnegative(),action:z.custom<GameAction>((v)=>!!v&&typeof v==='object'&&typeof (v as {type?:unknown}).type==='string'&&typeof (v as {playerId?:unknown}).playerId==='string')}),
+  z.object({type:z.literal('chat'),text:z.string().trim().min(1).max(240)}),
   z.object({type:z.literal('start')})
 ]);
 export type ClientMessage=z.infer<typeof clientMessageSchema>;
@@ -15,6 +16,7 @@ export type ServerMessage=
  | {type:'gameStarted';roomId:string;view:PlayerView}
  | {type:'gameFinished';roomId:string;view:PlayerView}
  | {type:'update';patch:Partial<PlayerView>;events:GameEvent[];sequence:number;clientSequence?:number}
+ | {type:'chat';playerId:string;text:string;createdAt:number}
  | {type:'room';roomId:string;seats:Array<{playerId:string;displayName:string;bot:boolean}>;lifecycle:RoomLifecycle;botStatuses:BotStatus[]}
  | {type:'error';code:string;message:string;details?:Record<string,unknown>};
 export type SavedGame=ReplayInput;
