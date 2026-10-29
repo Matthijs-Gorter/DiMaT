@@ -47,7 +47,8 @@ export interface GameEvent { type: string; privateTo?: string; [key: string]: un
 export interface Transition { state: GameState; events: GameEvent[]; }
 export interface ReplayInput { seed: number; settings: GameSettings; actions: GameAction[]; }
 export interface PlayerView {
-  playerId: string; phase: Phase; activePlayerId: string; players: Array<{ id: string; resourceCount: number; developmentCardCount: number; visibleVictoryPoints: number; roadsLeft: number; settlementsLeft: number; citiesLeft: number }>;
+  playerId: string; phase: Phase; activePlayerId: string; turnNumber: number; hasPlayedDevCard: boolean; bank: ResourceSet; developmentCardsRemaining: number; seed: number; settings: GameSettings;
+  players: Array<{ id: string; resourceCount: number; developmentCardCount: number; visibleVictoryPoints: number; roadsLeft: number; settlementsLeft: number; citiesLeft: number; knightsPlayed: number; longestRoadLength: number; hasLongestRoad: boolean; hasLargestArmy: boolean }>;
   ownResources: ResourceSet; ownDevelopmentCards: HeldDevCard[]; buildings: Array<Building | null>; roads: Array<Road | null>;
   board: Board; robberTile: number; legalActions: GameAction[]; winnerId: string | null; lastRoll: [number, number] | null;
 }

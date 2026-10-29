@@ -36,3 +36,9 @@
 - Use only the server's `legalActions` to construct highlighted vertex, edge, and tile targets. Keep a broad SVG stroke/circle as the hit target and show a pending indicator until the correlated server update arrives.
 - In automated browser checks, SVG road target clicks are made through Playwright's standard click path. The legal road edge has a separate visible dashed cue and a wider, almost transparent interaction stroke.
 - Unknown visual or game-state behavior should be captured in the remaining Part C–E work; detailed view fields and debug instrumentation are not added in this part.
+
+## 2026-10-29 — Phase 2.1 Part C: public inventory and player view
+
+- `PlayerView` exposes bank resource counts, remaining deck size, seed/settings, turn state, and public player metrics. It exposes only each opponent's resource/development-card totals, never card identities or resource distribution.
+- A player's public VP omits unrevealed victory-point cards; own card details remain in `ownDevelopmentCards`.
+- The base engine models domestic trade as an already-accepted transfer. The UI must not present that as a consent-based offer until the server has an offer/accept protocol; bank/port trades remain immediate legal actions.

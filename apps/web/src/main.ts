@@ -178,6 +178,37 @@ function renderRobberPicker(){
   for(const action of robberChoices){if(action.type!=='moveRobber'&&action.type!=='playKnight')continue;const victim='victimId'in action?action.victimId:undefined;const label=victim?`Steel een kaart van ${playerName(victim)}`:'Verplaats rover zonder slachtoffer';const button=element('button',victim?`player-choice player-${Number(victim.slice(1))}`:'',label);button.disabled=!!pending;button.onclick=()=>{robberChoices=null;sendAction(action,`tile-${action.tile}`);};picker.append(button);}
   const cancel=element('button','','Annuleer');cancel.onclick=()=>{robberChoices=null;render();};picker.append(cancel);return picker;
 }
+function renderDevelopmentHand(viewState:PlayerView){
+  const section=element('section','development-hand');section.append(element('h2','','Ontwikkelingskaarten'));
+  if(!viewState.ownDevelopmentCards.length){section.append(element('p','muted','Nog geen ontwikkelingskaarten.'));return section;}
+  const labels:Record<string,string>={knight:'Ridder',victoryPoint:'Overwinningspunt',roadBuilding:'Wegenbouw',yearOfPlenty:'Jaar van overvloed',monopoly:'Monopolie'};
+  for(const card of viewState.ownDevelopmentCards){
+    const cardBox=element('div','dev-card');const playable=viewState.legalActions.filter(action=>action.type===({knight:'playKnight',roadBuilding:'playRoadBuilding',yearOfPlenty:'playYearOfPlenty',monopoly:'playMonopoly'} as Record<string,string>)[card.kind]);
+    const canPlay=card.kind==='victoryPoint'?viewState.legalActions.some(action=>action.type==='revealVictoryPoint'):card.boughtTurn<viewState.turnNumber&&!viewState.hasPlayedDevCard&&playable.length>0;
+    cardBox.append(element('strong','',labels[card.kind]??card.kind));
+    if(card.kind==='victoryPoint'){cardBox.append(element('span','pill','Verborgen VP'));if(canPlay){const reveal=viewState.legalActions.find(action=>action.type==='revealVictoryPoint');if(reveal)cardBox.append(actionButton('Tonen',reveal));}}
+    else if(card.boughtTurn>=viewState.turnNumber)cardBox.append(element('span','muted','Niet speelbaar deze beurt (net gekocht)'));
+    else if(viewState.hasPlayedDevCard)cardBox.append(element('span','muted','Al een ontwikkelingskaart gespeeld deze beurt'));
+    else if(!canPlay)cardBox.append(element('span','muted','Nu niet beschikbaar'));
+    else if(card.kind==='knight'){const play=element('button','','Ridder spelen');play.onclick=()=>submitBuildMode('robber');cardBox.append(play);}
+    else for(const action of playable.slice(0,5)){const label=action.type==='playMonopoly'?`Kies ${action.resource}`:action.type==='playYearOfPlenty'?`Kies ${action.resources.join(' + ')}`:action.type==='playRoadBuilding'?`Plaats ${action.edges.length} weg(en)`:'Spelen';cardBox.append(actionButton(label,action));}
+    section.append(cardBox);
+  }
+  return section;
+}
+function renderDiscardPrompt(viewState:PlayerView){
+  if(viewState.phase!=='discard')return null;const legal=viewState.legalActions.filter((action):action is Extract<GameAction,{type:'discard'}>=>action.type==='discard');if(!legal.length)return null;
+  const required=Object.values(legal[0]!.resources).reduce<number>((total,count)=>total+(count??0),0),card=element('section','card discard-prompt');card.append(element('h2','','Weggooien na een 7'),element('p','muted',`Kies precies ${required} kaarten om af te leggen.`));
+  const form=element('form','discard-form');form.noValidate=true;const fields=new Map<Resource,HTMLInputElement>();const total=element('output','discard-total',`0 / ${required} gekozen`);const submit=element('button','primary','Kaarten afleggen');submit.type='submit';submit.disabled=true;
+  function update(){const selected=[...fields.values()].reduce((n,input)=>n+(Number(input.value)||0),0);const withinLimits=[...fields].every(([resource,input])=>Number(input.value)>=0&&Number(input.value)<=viewState.ownResources[resource]&&Number.isInteger(Number(input.value)));total.textContent=`${selected} / ${required} gekozen`;total.classList.toggle('valid',selected===required&&withinLimits);submit.disabled=selected!==required||!withinLimits||!!pending;}
+  for(const resource of ['brick','lumber','wool','grain','ore'] as Resource[]){const label=element('label','discard-field');const name=element('span','',`${RESOURCE_ICON[resource as keyof typeof RESOURCE_ICON]} ${resource}`);const available=element('small','',`${viewState.ownResources[resource]} beschikbaar`);const input=element('input');input.type='number';input.min='0';input.max=String(viewState.ownResources[resource]);input.step='1';input.value='0';input.inputMode='numeric';input.setAttribute('aria-label',`${resource} om af te leggen`);input.addEventListener('input',update);fields.set(resource,input);label.append(name,available,input);form.append(label);}
+  form.append(total,submit);form.onsubmit=event=>{event.preventDefault();update();if(submit.disabled)return;const resources=Object.fromEntries([...fields].map(([resource,input])=>[resource,Number(input.value)])) as Partial<Record<Resource,number>>;sendAction({type:'discard',playerId:viewState.playerId,resources});};card.append(form);return card;
+}
+function renderTradePanel(viewState:PlayerView){
+  const bankTrades=viewState.legalActions.filter((action):action is Extract<GameAction,{type:'maritimeTrade'}>=>action.type==='maritimeTrade');if(!bankTrades.length)return null;const panel=element('section','card trade-panel');panel.append(element('h2','','Bank- en havenhandel'),element('p','muted','Kies een beschikbare ruil op basis van je kaarten, bankvoorraad en havens.'));
+  const seen=new Set<string>();for(const action of bankTrades){const key=`${action.give}:${action.receive}`;if(seen.has(key))continue;seen.add(key);const harbors=viewState.board.vertices.filter(vertex=>vertex.harbor&&viewState.buildings[vertex.id]?.owner===Number(viewState.playerId.slice(1))).map(vertex=>vertex.harbor!);const ratio=harbors.some(harbor=>harbor.kind===action.give)?2:harbors.some(harbor=>harbor.kind==='generic')?3:4;panel.append(actionButton(`${ratio} ${action.give} → 1 ${action.receive}`,action));}
+  return panel;
+}
 function render(){
   if(!roomId){lobby();return;}
   const main=shell();main.dataset.gameLifecycle=lifecycle;const header=element('div','roomhead');
@@ -196,8 +227,10 @@ function render(){
   const side=element('aside','card game-sidebar');side.append(element('h2','','Spel'),element('p','muted',`Fase: ${view.phase} · Beurt: ${playerName(view.activePlayerId)}`));
   const dice=element('div','dice');if(view.lastRoll){dice.append(element('span','die',String(view.lastRoll[0])),element('span','die',String(view.lastRoll[1])),element('strong','dice-total',`= ${view.lastRoll[0]+view.lastRoll[1]}`));}else dice.append(element('span','muted','Dobbelstenen nog niet gegooid'));side.append(dice);
   const hand=element('div','hand');for(const resource of ['brick','lumber','wool','grain','ore'] as Resource[]){const cell=element('div','resource');cell.append(document.createTextNode(`${RESOURCE_ICON[resource as keyof typeof RESOURCE_ICON]} ${resource}`),element('b','',String(view.ownResources[resource])));hand.append(cell);}side.append(hand);
-  const players=element('div','players');for(const player of view.players){const panel=element('p',`player-panel player-${Number(player.id.slice(1))}`,`${playerName(player.id)}${player.id===playerId?' (jij)':''} · ${player.visibleVictoryPoints} VP · ${player.resourceCount} kaarten`);players.append(panel);}side.append(players);
+  const bank=element('section','bank-panel');bank.append(element('h2','','Bank · ontwikkelingsstapel'));const bankCounts=element('div','hand');for(const resource of ['brick','lumber','wool','grain','ore'] as Resource[]){const cell=element('div','resource');cell.append(document.createTextNode(`${RESOURCE_ICON[resource as keyof typeof RESOURCE_ICON]} ${resource}`),element('b','',String(view.bank[resource])));bankCounts.append(cell);}bank.append(bankCounts,element('p','muted',`${view.developmentCardsRemaining} ontwikkelingskaarten over`));side.append(bank,renderDevelopmentHand(view));
+  const players=element('div','players');for(const player of view.players){const isActive=player.id===view.activePlayerId,status=botStatuses.find(item=>item.playerId===player.id);const panel=element('article',`player-panel player-${Number(player.id.slice(1))}${isActive?' active':''}`);panel.append(element('strong','',`${playerName(player.id)}${player.id===playerId?' (jij)':''}`));const badges=element('div','player-badges');if(isActive)badges.append(element('span','pill','Aan zet'));if(seats.find(seat=>seat.playerId===player.id)?.bot)badges.append(element('span','pill',status?.status==='thinking'?'Bot denkt…':'Bot'));if(player.hasLongestRoad)badges.append(element('span','pill','Langste handelsroute'));if(player.hasLargestArmy)badges.append(element('span','pill','Grootste riddermacht'));panel.append(badges,element('p','',`${player.visibleVictoryPoints} VP zichtbaar · ${player.resourceCount} grondstofkaarten · ${player.developmentCardCount} ontwikkelingskaarten`),element('p','',`${player.knightsPlayed} ridders · route ${player.longestRoadLength} · ${player.roadsLeft} wegen · ${player.settlementsLeft} nederzettingen · ${player.citiesLeft} steden`));players.append(panel);}side.append(players);
   const picker=renderRobberPicker();if(picker)side.append(picker);
+  const discard=renderDiscardPrompt(view);if(discard)side.append(discard);const trade=renderTradePanel(view);if(trade)side.append(trade);
   const debug=renderDebugActions(view);if(debug)side.append(debug);
   side.append(element('h2','','Gebeurtenissen'));for(const line of events.filter(item=>!item.startsWith('Fout ')).slice(0,10))side.append(element('p','event',line));
   grid.append(board,side);main.append(grid,renderBuildBar(view));

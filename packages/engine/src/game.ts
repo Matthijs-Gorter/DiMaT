@@ -237,8 +237,8 @@ function removeDev(player:Player,kind:DevCard,turn:number){const i=player.devCar
 
 export function viewFor(s:GameState,playerId:string):PlayerView {
   const p=ownIndex(s,playerId);if(p<0)throw new Error(`Unknown player ${playerId}`);
-  return {playerId,phase:s.phase,activePlayerId:s.players[s.activePlayer]!.id,
-    players:s.players.map((pl,i)=>({id:pl.id,resourceCount:i===p?sum(pl.resources):sum(pl.resources),developmentCardCount:pl.devCards.length,visibleVictoryPoints:score(s,i)-pl.devCards.filter(c=>c.kind==='victoryPoint').length,roadsLeft:pl.roadsLeft,settlementsLeft:pl.settlementsLeft,citiesLeft:pl.citiesLeft})),
+  return {playerId,phase:s.phase,activePlayerId:s.players[s.activePlayer]!.id,turnNumber:s.turnNumber,hasPlayedDevCard:s.hasPlayedDevCard,bank:{...s.bank},developmentCardsRemaining:s.devDeck.length,seed:s.seed,settings:{...s.settings},
+    players:s.players.map((pl,i)=>({id:pl.id,resourceCount:sum(pl.resources),developmentCardCount:pl.devCards.length,visibleVictoryPoints:score(s,i)-pl.devCards.filter(c=>c.kind==='victoryPoint').length,roadsLeft:pl.roadsLeft,settlementsLeft:pl.settlementsLeft,citiesLeft:pl.citiesLeft,knightsPlayed:pl.knightsPlayed,longestRoadLength:longestRoadLength(s,i),hasLongestRoad:s.longestRoadHolder===i,hasLargestArmy:s.largestArmyHolder===i})),
     ownResources:{...s.players[p]!.resources},ownDevelopmentCards:structuredClone(s.players[p]!.devCards),buildings:structuredClone(s.buildings),roads:structuredClone(s.roads),board:structuredClone(s.board),robberTile:s.robberTile,legalActions:legalActions(s,playerId),winnerId:s.winner===null?null:s.players[s.winner]!.id,lastRoll:s.lastRoll?([...s.lastRoll] as [number,number]):null};
 }
 export function replayGame(input:ReplayInput):GameState {let state=createGame(input.seed,input.settings);for(const action of input.actions)state=apply(state,action).state;return state;}

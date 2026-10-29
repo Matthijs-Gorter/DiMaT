@@ -12,4 +12,5 @@ Items marked VERIFY in RULES.md require confirmation against the corresponding o
 - [ ] 5-6 player phase: special building phase details and whether it is in scope for base release.
 - [ ] Domestic counter-offer sequencing: verify exact transaction rules in the chosen edition.
 - [ ] Domestic trade bundles: confirm whether an offer may include multiple resource types on either side; Phase 1 currently models one type per side with arbitrary positive counts.
+- [ ] Online domestic-trade consent flow: the current engine action applies a transfer immediately and does not model offers, counter-offers, acceptance, or cancellation. Implement a room-level transaction protocol before exposing it as a human trade UI.
 - [ ] Confirm the canonical fixed beginner board and the exact scope of balanced generation when Phase 3 maps begin.

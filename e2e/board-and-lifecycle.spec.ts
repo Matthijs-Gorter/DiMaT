@@ -38,5 +38,7 @@ test('both browser contexts receive their own named seat and server-started game
   await expect(host.locator('[data-game-lifecycle="started"]')).toBeVisible();
   await expect(guest.locator('[data-game-lifecycle="started"]')).toBeVisible();
   await expect(host.getByText('Host',{exact:true})).toBeVisible();await expect(guest.getByText('Guest',{exact:true})).toBeVisible();
+  await expect(host.getByText('25 ontwikkelingskaarten over')).toBeVisible();
+  await expect(host.locator('.bank-panel .resource')).toHaveCount(5);
   await guestContext.close();await hostContext.close();
 });

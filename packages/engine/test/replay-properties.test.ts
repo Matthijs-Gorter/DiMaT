@@ -8,7 +8,7 @@ describe('determinism and hidden information',()=>{
     const {state,actions}=simulateGame(73,3);const replayed=replayGame({seed:73,settings:{playerCount:3,victoryTarget:10},actions});expect(replayed).toEqual(state);
   });
   it('does not expose another player hand or development-card identities',()=>{
-    const s=createGame(1);s.players[1]!.resources={brick:2,lumber:3,wool:4,grain:0,ore:1};s.players[1]!.devCards=[{kind:'monopoly',boughtTurn:0}];const view=viewFor(s,'p0');expect(view.players[1]).not.toHaveProperty('resources');expect(view.players[1]).not.toHaveProperty('developmentCards');expect(view.players[1]!.resourceCount).toBe(10);expect(JSON.stringify(view)).not.toContain('monopoly');
+    const s=createGame(1);s.players[1]!.resources={brick:2,lumber:3,wool:4,grain:0,ore:1};s.players[1]!.devCards=[{kind:'monopoly',boughtTurn:0}];const view=viewFor(s,'p0');expect(view.players[1]).not.toHaveProperty('resources');expect(view.players[1]).not.toHaveProperty('devCards');expect(view.players[1]).not.toHaveProperty('developmentCards');expect(view.players[1]!.resourceCount).toBe(10);expect(view.players[1]!.developmentCardCount).toBe(1);expect(view.bank).toEqual(s.bank);expect(view.developmentCardsRemaining).toBe(25);expect(JSON.stringify(view)).not.toContain('monopoly');
   });
   it('keeps initial inventory and deterministic boards across arbitrary seeds',()=>{
     fc.assert(fc.property(fc.integer(),seed=>{

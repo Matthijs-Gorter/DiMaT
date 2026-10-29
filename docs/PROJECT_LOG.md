@@ -47,3 +47,17 @@ Detailed, app-specific record of requests, implementation work, tests, simulator
 - **Verification:** Geometry tests passed (3 new tests; the engine suite passed 52 tests). Workspace typecheck and lint passed. Focused Playwright direct-road test passed after replacing a zero-area SVG line hit target with a polygon; full Playwright suite is running. Initial browser runs exposed and fixed a test assumption about visible SVG stroke and a strict locator matching names in multiple panels.
 - **Assumption:** Graph IDs remain stable because persisted replays reference them. The visual geometry changes coordinates only.
 - **Files:** Engine board and geometry tests; protocol/server update sequence; web SVG renderer and styles; Playwright board test; `docs/DECISIONS.md`.
+
+## 2026-10-29 — Phase 2.1 Part C: bank and player information
+
+- **Request:** Add bank/deck inventory, my development-card state and public player panels without leaking private cards.
+- **Changes:** Extended `PlayerView` with bank counts, development deck size, seed/settings, turn/card timing, played knights, longest road and award-holder status. Added bank and development-card panels, public player cards with piece supply/active/bot badges, a discard form for a seven, and buttons for currently legal bank/port trades. Added/strengthened a hidden-information test for opponent resource/development totals and card identities; added browser assertions for bank contents.
+- **Verification:** Hidden-information and engine suites passed (52 engine tests); `pnpm -r typecheck` and `pnpm -r lint` passed. The two-browser start/bank assertion passed. Full Playwright passed before the new bank assertions; the adjusted targeted assertion passed.
+- **Known gap:** Domestic trades remain inaccessible in the normal UI because the engine currently treats them as instantly accepted and has no offer, counter-offer, acceptance, or cancellation protocol. This is recorded in `docs/OPEN_QUESTIONS.md`; rendering it as a consent-based UI requires a room-level transaction design.
+- **Files:** Engine `PlayerView` and privacy test; web panels/forms; browser assertions; decisions/open questions.
+
+## 2026-10-29 — Improve discard prompt layout
+
+- **Request:** Fix cramped discard controls and the native validation error shown while choosing cards after a seven.
+- **Changes:** Replaced inline inputs with a responsive two-column grid, displayed available cards per resource, and added a live selected/required counter. The submit button stays disabled until a valid exact discard count is entered, avoiding the confusing native warning for unavailable cards.
+- **Verification:** Workspace `typecheck` and `lint` passed. Browser coverage does not yet force a seven/discard state.
