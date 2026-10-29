@@ -29,3 +29,10 @@
 
 - **Lifecycle policy:** Rooms require both human seats before the host starts. Bot seats never submit client messages. A resumed room is considered started when its persisted lifecycle says `started`; legacy rows with actions but no lifecycle are migrated as started.
 - **Bot recovery policy:** On worker timeout/error, take one deterministic random legal action from that bot's own view. If no legal action exists or the fallback fails, mark the bot stalled with a reason and log it instead of silently waiting.
+
+## 2026-10-29 — Phase 2.1 Part B: board geometry and direct placement
+
+- Preserve the established vertex and edge IDs while reprojecting coordinates to a regular pointy-top lattice. Room action logs store these IDs, so changing graph enumeration would break replays.
+- Use only the server's `legalActions` to construct highlighted vertex, edge, and tile targets. Keep a broad SVG stroke/circle as the hit target and show a pending indicator until the correlated server update arrives.
+- In automated browser checks, SVG road target clicks are made through Playwright's standard click path. The legal road edge has a separate visible dashed cue and a wider, almost transparent interaction stroke.
+- Unknown visual or game-state behavior should be captured in the remaining Part C–E work; detailed view fields and debug instrumentation are not added in this part.

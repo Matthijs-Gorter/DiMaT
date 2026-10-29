@@ -62,11 +62,11 @@ function sendPrivateView(room:Room,seat:Seat){
   const msg:ServerMessage=room.lifecycle==='finished'?{type:'gameFinished',roomId:room.id,view:viewFor(room.state,seat.playerId)}:{type:'gameStarted',roomId:room.id,view:viewFor(room.state,seat.playerId)};
   send(seat.socket,msg);
 }
-function broadcastUpdate(room:Room,events:GameEvent[],sequence:number,previous:Map<string,PlayerView>){
+function broadcastUpdate(room:Room,events:GameEvent[],sequence:number,previous:Map<string,PlayerView>,clientSequence?:number){
   for(const seat of room.seats)if(!seat.bot){
     const next=viewFor(room.state,seat.playerId),old=previous.get(seat.playerId);const patch:Partial<PlayerView>={};
     if(old)for(const key of Object.keys(next) as Array<keyof PlayerView>)if(JSON.stringify(old[key])!==JSON.stringify(next[key]))Object.assign(patch,{[key]:next[key]});
-    send(seat.socket,{type:'update',patch,events:events.filter(e=>!e.privateTo||e.privateTo===seat.playerId),sequence});
+    send(seat.socket,{type:'update',patch,events:events.filter(e=>!e.privateTo||e.privateTo===seat.playerId),sequence,...(clientSequence!==undefined?{clientSequence}:{})});
   }
 }
 function canonical(value:unknown):string{
@@ -74,7 +74,7 @@ function canonical(value:unknown):string{
   if(value&&typeof value==='object')return `{${Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,v])=>`${JSON.stringify(key)}:${canonical(v)}`).join(',')}}`;
   return JSON.stringify(value);
 }
-function transition(room:Room,action:GameAction,outcome:'human'|'bot'='human'){
+function transition(room:Room,action:GameAction,outcome:'human'|'bot'='human',clientSequence?:number){
   if(room.lifecycle!=='started')throw new RoomError('GAME_NOT_STARTED','The game has not started.',{lifecycle:room.lifecycle});
   const legal=legalActions(room.state,action.playerId);
   if(!legal.some(candidate=>canonical(candidate)===canonical(action))){
@@ -86,7 +86,7 @@ function transition(room:Room,action:GameAction,outcome:'human'|'bot'='human'){
   const previous=new Map(room.seats.filter(s=>!s.bot).map(s=>[s.playerId,viewFor(room.state,s.playerId)]));
   const result=apply(room.state,action);room.state=result.state;room.actions.push(action);
   if(room.state.phase==='finished')room.lifecycle='finished';
-  persist(room);broadcastUpdate(room,result.events,room.actions.length-1,previous);
+  persist(room);broadcastUpdate(room,result.events,room.actions.length-1,previous,clientSequence);
   if(room.lifecycle==='finished'){broadcastRoom(room);for(const seat of room.seats)sendPrivateView(room,seat);}
   app.log.info({roomId:room.id,seatId:action.playerId,actionType:action.type,outcome:'accepted',actor:outcome,actionIndex:room.actions.length-1},'game action accepted');
 }
@@ -166,7 +166,7 @@ async function handleMessage(ws:WebSocket,raw:string,connection:{room?:Room;seat
       if(parsed.data.sequence<=seat.lastSequence)throw new RoomError('DUPLICATE_ACTION','This action sequence was already handled.',{lastSequence:seat.lastSequence,receivedSequence:parsed.data.sequence});
       if(parsed.data.action.playerId!==seat.playerId)throw new RoomError('SEAT_MISMATCH','Action player does not match the connected seat.',{seatPlayerId:seat.playerId,actionPlayerId:parsed.data.action.playerId});
       seat.lastSequence=parsed.data.sequence;
-      transition(room,parsed.data.action);persist(room);void driveBots(room);return;
+      transition(room,parsed.data.action,'human',parsed.data.sequence);void driveBots(room);return;
     }
   }catch(error){reject(ws,error,connection.room,connection.seat,input);}
 }

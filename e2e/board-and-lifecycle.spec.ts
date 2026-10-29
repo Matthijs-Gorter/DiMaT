@@ -24,7 +24,10 @@ test('setup roads have direct legal edge hit targets on the board',async({browse
   await expect(host.locator('.spot.legal')).toHaveCount(54,{timeout:5000});
   await host.locator('.spot.legal').first().click();
   await expect(host.getByText(/setupRoad/)).toBeVisible();
-  await expect(host.locator('.road-edge.legal')).toHaveCount(2);
+  await expect(host.locator('.road-edge.legal')).toHaveCount(3);
+  await host.locator('.road-edge.legal').first().click();
+  await expect(host.locator('.road-edge.legal')).toHaveCount(0,{timeout:5000});
+  await expect(host.locator('.road-piece')).toHaveCount(1);
   await guestContext.close();await hostContext.close();
 });
 
@@ -34,6 +37,6 @@ test('both browser contexts receive their own named seat and server-started game
   await host.getByRole('button',{name:'Start spel'}).click();
   await expect(host.locator('[data-game-lifecycle="started"]')).toBeVisible();
   await expect(guest.locator('[data-game-lifecycle="started"]')).toBeVisible();
-  await expect(host.getByText('Host')).toBeVisible();await expect(guest.getByText('Guest')).toBeVisible();
+  await expect(host.getByText('Host',{exact:true})).toBeVisible();await expect(guest.getByText('Guest',{exact:true})).toBeVisible();
   await guestContext.close();await hostContext.close();
 });

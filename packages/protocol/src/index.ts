@@ -14,7 +14,7 @@ export type ServerMessage=
  | {type:'joined';roomId:string;seatToken:string;playerId:string;lifecycle:RoomLifecycle}
  | {type:'gameStarted';roomId:string;view:PlayerView}
  | {type:'gameFinished';roomId:string;view:PlayerView}
- | {type:'update';patch:Partial<PlayerView>;events:GameEvent[];sequence:number}
+ | {type:'update';patch:Partial<PlayerView>;events:GameEvent[];sequence:number;clientSequence?:number}
  | {type:'room';roomId:string;seats:Array<{playerId:string;displayName:string;bot:boolean}>;lifecycle:RoomLifecycle;botStatuses:BotStatus[]}
  | {type:'error';code:string;message:string;details?:Record<string,unknown>};
 export type SavedGame=ReplayInput;

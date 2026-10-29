@@ -4,6 +4,9 @@ import { shuffle } from './random.js';
 const POSITIONS: Array<[number, number]> = [];
 for (let q = -2; q <= 2; q++) for (let r = -2; r <= 2; r++) if (Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r)) <= 2) POSITIONS.push([q, r]);
 const CORNERS: Array<[number, number]> = [[2,0],[1,1],[-1,1],[-2,0],[-1,-1],[1,-1]];
+// The graph walk below retains historical IDs. These offsets reproject each
+// old corner ordinal onto a regular pointy-top hex lattice after construction.
+const POINTY_CORNERS: Array<[number, number]> = [[1,-1],[1,1],[0,2],[-1,1],[-1,-1],[0,-2]];
 const NUMBER_TOKENS = [2,3,3,4,4,5,5,6,6,8,8,9,9,10,10,11,11,12];
 const HARBOR_KINDS: Array<'generic' | Resource> = ['generic','generic','generic','generic',...RESOURCES];
 
@@ -32,11 +35,15 @@ export function createBoard(seed: number): { board: Board; rngState: number } {
   const vertices=[...vertexByKey.values()]; const edges=[...edgeByKey.values()];
   for (const e of edges) for (const v of e.vertices) vertices[v]!.edges.push(e.id);
   for (const t of tiles) for (const v of t.vertices) vertices[v]!.tiles.push(t.id);
+  for(const tile of tiles)for(let corner=0;corner<6;corner++){
+    const vertex=vertices[tile.vertices[corner]!]!,offset=POINTY_CORNERS[corner]!;
+    vertex.x=2*tile.q+tile.r+offset[0];vertex.y=3*tile.r+offset[1];
+  }
   const desert=tiles.find(t=>t.kind==='desert')!;
   // Assign number tokens independently of resource layout, preserving the exact token multiset.
   const tokenOrder=shuffle(NUMBER_TOKENS, shuffledNumbers.state).items; let tokenIndex=0;
   for (const t of tiles) t.number=t.kind==='desert'?null:tokenOrder[tokenIndex++]!;
-  const coastEdges=edges.filter(e=>e.tiles.length===1).sort((a,b)=>{const ea=vertices[a.vertices[0]]!,eb=vertices[a.vertices[1]]!,fa=vertices[b.vertices[0]]!,fb=vertices[b.vertices[1]]!;return Math.atan2((ea.y+eb.y)/2,(ea.x+eb.x)/2)-Math.atan2((fa.y+fb.y)/2,(fa.x+fb.x)/2);});
+  const coastEdges=edges.filter(e=>e.tiles.length===1).sort((a,b)=>{const ea=vertices[a.vertices[0]]!,eb=vertices[a.vertices[1]]!,fa=vertices[b.vertices[0]]!,fb=vertices[b.vertices[1]]!;return Math.atan2((ea.y+eb.y)/2,Math.sqrt(3)*(ea.x+eb.x)/2)-Math.atan2((fa.y+fb.y)/2,Math.sqrt(3)*(fa.x+fb.x)/2);});
   const harborKinds=shuffle(HARBOR_KINDS, tokenIndex + shuffledKinds.state).items;
   // Each harbor occupies the two endpoints of one spaced coastal edge.
   for (let h=0;h<9;h++) {const edge=coastEdges[Math.floor((h+0.5)*coastEdges.length/9)]!;for(const v of edge.vertices)vertices[v]!.harbor={id:h,kind:harborKinds[h]!,ratio:harborKinds[h]==='generic'?3:2};}
