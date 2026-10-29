@@ -1,4 +1,4 @@
-import { expect, test, type Browser } from '@playwright/test';
+import { expect, test, type Browser, type Page } from '@playwright/test';
 
 async function createTwoHumansAndBot(browser:Browser){
   const hostContext=await browser.newContext();const guestContext=await browser.newContext();
@@ -11,6 +11,11 @@ async function createTwoHumansAndBot(browser:Browser){
   return {hostContext,guestContext,host,guest};
 }
 
+async function clickBoardTarget(page:Page,selector:string){
+  const target=page.locator(selector).first();await expect(target).toBeVisible();const bounds=await target.boundingBox();if(!bounds)throw new Error(`Board target is not visible: ${selector}`);
+  await page.mouse.click(bounds.x+bounds.width/2,bounds.y+bounds.height/2);
+}
+
 test('lobby does not expose action submission before the server starts the game',async({browser})=>{
   const {host,hostContext,guestContext}=await createTwoHumansAndBot(browser);
   await expect(host.locator('.actions')).toBeHidden();
@@ -21,15 +26,60 @@ test('lobby does not expose action submission before the server starts the game'
 
 test('setup roads have direct legal edge hit targets on the board',async({browser})=>{
   const {host,hostContext,guest,guestContext}=await createTwoHumansAndBot(browser);
+  await host.setViewportSize({width:1024,height:768});
   await host.getByRole('button',{name:'Start spel'}).click();
+  await expect(host.locator('.terrain-art')).toHaveCount(19);
+  const tileImages=await host.locator('.terrain-art').evaluateAll(images=>images.map(image=>({kind:image.getAttribute('data-kind'),path:image.getAttribute('href')})));
+  const tileAssets:Record<string,string>={brick:'hill.svg',lumber:'forest.svg',wool:'pasture.svg',grain:'field.svg',ore:'mountain.svg',desert:'desert.svg'};
+  for(const image of tileImages)expect(image.path).toBe(`/tiles/${tileAssets[image.kind??'']}`);
+  const assetResponses=await host.evaluate(async()=>Promise.all(['desert','field','forest','hill','mountain','pasture'].map(async name=>(await fetch(`/tiles/${name}.svg`)).ok)));
+  expect(assetResponses).toEqual([true,true,true,true,true,true]);
   await expect(host.locator('.spot.legal')).toHaveCount(54,{timeout:5000});
-  await host.locator('.spot.legal').first().click();
+  await clickBoardTarget(host,'.spot.legal');
   await expect(host.getByText(/setupRoad/)).toBeVisible();
+  await expect(host.locator('.game-left-sidebar .event')).toContainText('plaatste een nederzetting');
   await expect(host.locator('.road-edge.legal')).toHaveCount(3);
-  await host.locator('.road-edge.legal').first().click();
+  await clickBoardTarget(host,'.road-edge.legal');
   await expect(host.locator('.road-edge.legal')).toHaveCount(0,{timeout:5000});
   await expect(host.locator('.road-piece')).toHaveCount(1);
+  const boardBounds=await host.locator('.board').boundingBox();expect(boardBounds).not.toBeNull();
+  await host.mouse.move(boardBounds!.x+8,boardBounds!.y+8);await host.mouse.down();await host.mouse.move(boardBounds!.x+308,boardBounds!.y+8);await host.mouse.up();
+  const pannedViewBox=(await host.locator('.board').getAttribute('viewBox'))!.split(' ').map(Number);
+  expect(pannedViewBox[0]).toBeGreaterThanOrEqual(-15);expect(pannedViewBox[0]).toBeLessThanOrEqual(-5);
+  expect(pannedViewBox[1]).toBeGreaterThanOrEqual(-13.5);expect(pannedViewBox[1]).toBeLessThanOrEqual(-4.5);
   const originalViewBox=await host.locator('.board').getAttribute('viewBox');await host.getByRole('button',{name:'Inzoomen'}).click();await expect(host.locator('.board')).not.toHaveAttribute('viewBox',originalViewBox??'');await host.getByRole('button',{name:'Hercentreer'}).click();
+  await guestContext.close();await hostContext.close();
+});
+
+test('desktop game layout fits common laptop and desktop viewports',async({browser})=>{
+  const {host,hostContext,guestContext}=await createTwoHumansAndBot(browser);
+  await host.getByRole('button',{name:'Start spel'}).click();
+  await expect(host.locator('.board')).toBeVisible();
+  const viewports=[{width:1920,height:1080},{width:1440,height:900},{width:1280,height:800},{width:1024,height:768}];
+  for(const [index,viewport] of viewports.entries()){
+    await host.setViewportSize(viewport);
+    await host.evaluate(theme=>{document.documentElement.dataset.theme=theme;},index%2?'dark':'light');
+    const layout=await host.evaluate(()=>{
+      const board=document.querySelector<HTMLElement>('.boardcard')!.getBoundingClientRect();
+      const bottomBar=document.querySelector<HTMLElement>('.bottom-bar')!.getBoundingClientRect();
+      const leftSidebar=document.querySelector<HTMLElement>('.game-left-sidebar')!.getBoundingClientRect();
+      const sidebar=document.querySelector<HTMLElement>('.game-sidebar')!.getBoundingClientRect();
+      const svg=document.querySelector<SVGSVGElement>('.board')!.getBoundingClientRect();
+      return {viewportWidth:window.innerWidth,scrollWidth:document.documentElement.scrollWidth,viewportHeight:window.innerHeight,scrollHeight:document.documentElement.scrollHeight,leftSidebar:{left:leftSidebar.left,right:leftSidebar.right},board:{left:board.left,right:board.right,bottom:board.bottom,width:board.width},bottomBar:{top:bottomBar.top},sidebar:{left:sidebar.left,right:sidebar.right},svg:{width:svg.width,height:svg.height}};
+    });
+    expect(layout.scrollWidth,`horizontal overflow at ${viewport.width}x${viewport.height}`).toBeLessThanOrEqual(layout.viewportWidth);
+    expect(layout.scrollHeight,`vertical overflow at ${viewport.width}x${viewport.height}`).toBeLessThanOrEqual(layout.viewportHeight+1);
+    expect(layout.leftSidebar.right).toBeLessThanOrEqual(layout.board.left);
+    expect(layout.board.right).toBeLessThanOrEqual(layout.sidebar.left);
+    expect(layout.board.bottom,`board overlaps bottom bar at ${viewport.width}x${viewport.height}`).toBeLessThanOrEqual(layout.bottomBar.top);
+    expect(layout.svg.width,`board width at ${viewport.width}x${viewport.height}: ${JSON.stringify(layout)}`).toBeGreaterThan(250);
+    expect(layout.svg.height,`board height at ${viewport.width}x${viewport.height}: ${JSON.stringify(layout)}`).toBeGreaterThan(250);
+  }
+  await expect(host.locator('.game-left-sidebar .players .player-panel')).toHaveCount(3);
+  await expect(host.locator('.game-left-sidebar .player-card-count')).toHaveCount(3);
+  await expect(host.locator('.game-left-sidebar .player-card-count').first()).toHaveText(/^\d+ kaarten$/);
+  await expect(host.locator('.game-left-sidebar .player-panel').first()).not.toContainText(/VP zichtbaar|grondstofkaarten|ontwikkelingskaarten|ridders|handelsroute|wegen|steden/);
+  await expect(host.locator('.game-left-sidebar .event-log-title')).toHaveText('Gebeurtenissen');
   await guestContext.close();await hostContext.close();
 });
 
@@ -40,13 +90,14 @@ test('both humans complete the full setup on the board and roll to begin play',a
     const active=await host.locator('.player-panel.active').textContent();if(!active)continue;
     if(active.includes('Bot 1')){await expect.poll(async()=>!(await host.locator('.player-panel.active').textContent())?.includes('Bot 1'),{timeout:10000}).toBe(true);continue;}
     const page=active.includes('Host')?host:guest;
-    if(phaseText?.includes('setupSettlement')){await page.locator('.spot.legal').first().click();await expect(page.locator('.game-sidebar>p.muted')).toContainText('setupRoad');}
-    if((await page.locator('.game-sidebar>p.muted').textContent())?.includes('setupRoad'))await page.locator('.road-edge.legal').first().click();
+    if(phaseText?.includes('setupSettlement')){await clickBoardTarget(page,'.spot.legal');await expect(page.locator('.game-sidebar>p.muted')).toContainText('setupRoad');}
+    if((await page.locator('.game-sidebar>p.muted').textContent())?.includes('setupRoad')){await clickBoardTarget(page,'.road-edge.legal');await expect(page.locator('.game-sidebar>p.muted')).not.toContainText('setupRoad',{timeout:5000});}
   }
   await expect(host.locator('.game-sidebar>p.muted')).toContainText('Fase: roll');await expect(host.locator('.player-panel.active')).toContainText('Host');
+  await host.setViewportSize({width:1024,height:768});
   const bankTotal=await host.locator('.bank-panel .resource b').evaluateAll(nodes=>nodes.reduce((sum,node)=>sum+Number(node.textContent),0));expect(bankTotal).toBeLessThan(95);
-  await host.getByRole('button',{name:'Gooi de dobbelstenen'}).click();await expect.poll(async()=>await host.locator('.game-sidebar>p.muted').textContent()).toMatch(/Fase: (robber|build)/);if((await host.locator('.game-sidebar>p.muted').textContent())?.includes('Fase: robber')){await host.locator('.legal-tile').first().click();if(await host.locator('.victim-picker').count())await host.locator('.victim-picker button').first().click();}await expect(host.locator('.game-sidebar>p.muted')).toContainText('Fase: build');
-  await host.getByRole('button',{name:'Weg',exact:true}).click();await expect(host.locator('.road-edge.legal').first()).toBeVisible();await host.locator('.road-edge.legal').first().click();await expect(host.locator('.road-piece')).toHaveCount(7);
+  await host.getByRole('button',{name:'Gooi de dobbelstenen'}).click();await expect.poll(async()=>await host.locator('.game-sidebar>p.muted').textContent()).toMatch(/Fase: (robber|build)/);if((await host.locator('.game-sidebar>p.muted').textContent())?.includes('Fase: robber')){await clickBoardTarget(host,'.legal-tile');if(await host.locator('.victim-picker').count())await host.locator('.victim-picker button').first().click();}await expect(host.locator('.game-sidebar>p.muted')).toContainText('Fase: build');
+  await host.getByRole('button',{name:'Weg',exact:true}).click();await expect(host.locator('.road-edge.legal').first()).toBeVisible();await clickBoardTarget(host,'.road-edge.legal');await expect(host.locator('.road-piece')).toHaveCount(7);
   await guestContext.close();await hostContext.close();
 });
 

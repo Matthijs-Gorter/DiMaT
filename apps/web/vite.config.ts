@@ -3,6 +3,7 @@ import { defineConfig } from 'vite';
 const apiPort = process.env.VITE_API_PORT ?? '3000';
 
 export default defineConfig({
+  publicDir: '../../assets',
   server: {
     host: true,
     port: 5173,
