@@ -29,11 +29,28 @@ test('setup roads have direct legal edge hit targets on the board',async({browse
   await host.setViewportSize({width:1024,height:768});
   await host.getByRole('button',{name:'Start spel'}).click();
   await expect(host.locator('.terrain-art')).toHaveCount(19);
+  const maskGeometry=await host.locator('.terrain-art').evaluateAll(images=>images.map(image=>{const mask=image.ownerDocument.getElementById(image.getAttribute('clip-path')!.slice(5,-1))?.querySelector('polygon')!;const bounds=mask.getBBox();return {transform:mask.getAttribute('transform'),width:image.getAttribute('width'),height:image.getAttribute('height'),maskWidth:bounds.width,maskHeight:bounds.height};}));
+  expect(maskGeometry).toHaveLength(19);
+  for(const geometry of maskGeometry){expect(geometry.transform).toBeNull();expect(geometry.width).toBe('4');expect(Number(geometry.height)).toBeCloseTo(2*Math.sqrt(3),5);expect(geometry.maskWidth).toBeCloseTo(4,5);expect(geometry.maskHeight).toBeCloseTo(2*Math.sqrt(3),5);}
+  const tileStyle=await host.locator('.hex').first().evaluate(tile=>({gap:getComputedStyle(tile).strokeWidth,label:getComputedStyle(tile.ownerDocument.querySelector('.number-label')!).fontSize}));
+  expect(tileStyle.gap).toBe('5px');
+  expect(Number.parseFloat(tileStyle.label)).toBeCloseTo(.34,5);
+  await expect(host.locator('.number-token').first()).toHaveAttribute('r','.6');
+  await expect(host.locator('.beach-rim')).toHaveCount(0);
+  await expect(host.locator('.harbor-marker')).toHaveCount(9);
+  await expect(host.locator('.harbor-marker').first()).toHaveAttribute('r','0.45');
+  const harborGeometry=await host.locator('.harbor').evaluateAll(groups=>groups.map(group=>{
+    const connectors=[...group.querySelectorAll<SVGLineElement>('.harbor-connector')],marker=group.querySelector<SVGCircleElement>('.harbor-marker')!;
+    return {edge:group.getAttribute('data-edge'),connectors:connectors.map(connector=>({vertex:connector.dataset.vertex,start:[connector.x1.baseVal.value,connector.y1.baseVal.value],endpoint:[connector.x2.baseVal.value,connector.y2.baseVal.value]})),center:[marker.cx.baseVal.value,marker.cy.baseVal.value],radius:marker.r.baseVal.value};
+  }));
+  expect(harborGeometry).toHaveLength(9);
+  const legalVertices=await host.locator('.spot.legal').evaluateAll(spots=>spots.map(spot=>{const circle=spot as SVGCircleElement;return [circle.cx.baseVal.value,circle.cy.baseVal.value];}));
+  for(const harbor of harborGeometry){expect(harbor.edge).not.toBeNull();expect(harbor.connectors).toHaveLength(2);expect(harbor.radius).toBeCloseTo(.45,5);const endpoints=new Set<string>();for(const connector of harbor.connectors){expect(connector.vertex).not.toBeNull();expect(legalVertices.some(([vertexX,vertexY])=>Math.abs(vertexX!-connector.start[0]!)<1e-4&&Math.abs(vertexY!-connector.start[1]!)<1e-4)).toBe(true);expect(Math.abs(Math.hypot(connector.endpoint[0]!-harbor.center[0]!,connector.endpoint[1]!-harbor.center[1]!)-harbor.radius)).toBeLessThan(1e-4);endpoints.add(connector.endpoint.join(','));}expect(endpoints.size).toBe(2);}
   const tileImages=await host.locator('.terrain-art').evaluateAll(images=>images.map(image=>({kind:image.getAttribute('data-kind'),path:image.getAttribute('href')})));
-  const tileAssets:Record<string,string>={brick:'hill.svg',lumber:'forest.svg',wool:'pasture.svg',grain:'field.svg',ore:'mountain.svg',desert:'desert.svg'};
-  for(const image of tileImages)expect(image.path).toBe(`/tiles/${tileAssets[image.kind??'']}`);
-  const assetResponses=await host.evaluate(async()=>Promise.all(['desert','field','forest','hill','mountain','pasture'].map(async name=>(await fetch(`/tiles/${name}.svg`)).ok)));
-  expect(assetResponses).toEqual([true,true,true,true,true,true]);
+  const tileAssetPrefixes:Record<string,string>={brick:'spring-brick-',lumber:'spring-wood-',wool:'spring-sheep-',grain:'spring-wheat-',ore:'spring-ore-',desert:'spring-desert_'};
+  for(const image of tileImages){expect(image.path).toMatch(new RegExp(`^/tiles/${tileAssetPrefixes[image.kind??'']}.*\\.jpg$`));}
+  const assetResponses=await host.evaluate(async paths=>Promise.all([...new Set(paths)].map(async path=>(await fetch(path)).ok)),tileImages.map(image=>image.path!));
+  expect(assetResponses.every(Boolean)).toBe(true);
   await expect(host.locator('.spot.legal')).toHaveCount(54,{timeout:5000});
   await clickBoardTarget(host,'.spot.legal');
   await expect(host.getByText(/setupRoad/)).toBeVisible();
@@ -42,11 +59,14 @@ test('setup roads have direct legal edge hit targets on the board',async({browse
   await clickBoardTarget(host,'.road-edge.legal');
   await expect(host.locator('.road-edge.legal')).toHaveCount(0,{timeout:5000});
   await expect(host.locator('.road-piece')).toHaveCount(1);
+  await expect(host.locator('.road-piece').first()).toHaveAttribute('stroke-width','.2');
   const boardBounds=await host.locator('.board').boundingBox();expect(boardBounds).not.toBeNull();
+  const initialViewBox=(await host.locator('.board').getAttribute('viewBox'))!.split(' ').map(Number);
   await host.mouse.move(boardBounds!.x+8,boardBounds!.y+8);await host.mouse.down();await host.mouse.move(boardBounds!.x+308,boardBounds!.y+8);await host.mouse.up();
   const pannedViewBox=(await host.locator('.board').getAttribute('viewBox'))!.split(' ').map(Number);
-  expect(pannedViewBox[0]).toBeGreaterThanOrEqual(-15);expect(pannedViewBox[0]).toBeLessThanOrEqual(-5);
-  expect(pannedViewBox[1]).toBeGreaterThanOrEqual(-13.5);expect(pannedViewBox[1]).toBeLessThanOrEqual(-4.5);
+  expect(pannedViewBox[0]).toBeLessThan(initialViewBox[0]!);
+  expect(Math.abs(pannedViewBox[0]!-initialViewBox[0]!)).toBeLessThan(initialViewBox[2]!);
+  expect(pannedViewBox[1]).toBeCloseTo(initialViewBox[1]!,5);
   const originalViewBox=await host.locator('.board').getAttribute('viewBox');await host.getByRole('button',{name:'Inzoomen'}).click();await expect(host.locator('.board')).not.toHaveAttribute('viewBox',originalViewBox??'');await host.getByRole('button',{name:'Hercentreer'}).click();
   await guestContext.close();await hostContext.close();
 });
@@ -65,13 +85,15 @@ test('desktop game layout fits common laptop and desktop viewports',async({brows
       const leftSidebar=document.querySelector<HTMLElement>('.game-left-sidebar')!.getBoundingClientRect();
       const sidebar=document.querySelector<HTMLElement>('.game-sidebar')!.getBoundingClientRect();
       const svg=document.querySelector<SVGSVGElement>('.board')!.getBoundingClientRect();
-      return {viewportWidth:window.innerWidth,scrollWidth:document.documentElement.scrollWidth,viewportHeight:window.innerHeight,scrollHeight:document.documentElement.scrollHeight,leftSidebar:{left:leftSidebar.left,right:leftSidebar.right},board:{left:board.left,right:board.right,bottom:board.bottom,width:board.width},bottomBar:{top:bottomBar.top},sidebar:{left:sidebar.left,right:sidebar.right},svg:{width:svg.width,height:svg.height}};
+      const bankColumns=getComputedStyle(document.querySelector<HTMLElement>('.bank-panel .hand')!).gridTemplateColumns.split(' ').length;
+      return {viewportWidth:window.innerWidth,scrollWidth:document.documentElement.scrollWidth,viewportHeight:window.innerHeight,scrollHeight:document.documentElement.scrollHeight,leftSidebar:{left:leftSidebar.left,right:leftSidebar.right},board:{left:board.left,right:board.right,bottom:board.bottom,width:board.width},bottomBar:{top:bottomBar.top},sidebar:{left:sidebar.left,right:sidebar.right},svg:{width:svg.width,height:svg.height},bankColumns};
     });
     expect(layout.scrollWidth,`horizontal overflow at ${viewport.width}x${viewport.height}`).toBeLessThanOrEqual(layout.viewportWidth);
     expect(layout.scrollHeight,`vertical overflow at ${viewport.width}x${viewport.height}`).toBeLessThanOrEqual(layout.viewportHeight+1);
     expect(layout.leftSidebar.right).toBeLessThanOrEqual(layout.board.left);
     expect(layout.board.right).toBeLessThanOrEqual(layout.sidebar.left);
     expect(layout.board.bottom,`board overlaps bottom bar at ${viewport.width}x${viewport.height}`).toBeLessThanOrEqual(layout.bottomBar.top);
+    expect(layout.bankColumns,`bank items should wrap into three columns at ${viewport.width}x${viewport.height}`).toBe(3);
     expect(layout.svg.width,`board width at ${viewport.width}x${viewport.height}: ${JSON.stringify(layout)}`).toBeGreaterThan(250);
     expect(layout.svg.height,`board height at ${viewport.width}x${viewport.height}: ${JSON.stringify(layout)}`).toBeGreaterThan(250);
   }
@@ -110,6 +132,11 @@ test('both browser contexts receive their own named seat and server-started game
   await expect(host.getByText('Host',{exact:true})).toBeVisible();await expect(guest.getByText('Guest',{exact:true})).toBeVisible();
   await expect(host.getByText('25 ontwikkelingskaarten over')).toBeVisible();
   await expect(host.locator('.bank-panel .resource')).toHaveCount(5);
+  await expect(host.locator('.bottom-bar .resource').first()).toContainText('brick');
+  await expect(host.locator('.bottom-bar .resource').nth(1)).toContainText('hout');
+  await expect(host.locator('.bottom-bar .resource').nth(2)).toContainText('wol');
+  await expect(host.locator('.bottom-bar .resource').nth(3)).toContainText('graan');
+  await expect(host.locator('.bottom-bar .resource').nth(4)).toContainText('erts');
   await guest.reload();await expect(guest.locator('[data-game-lifecycle="started"]')).toBeVisible();
   await guest.locator('.chat-form input').fill('Hoi!');await guest.locator('.chat-form button').click();await expect(host.getByText('Guest: Hoi!')).toBeVisible();
   await host.getByRole('button',{name:'Debug',exact:true}).click();await host.locator('.debug-actions>summary').click();await expect(host.getByRole('button',{name:'Kopieer debugbundel'})).toBeVisible();await expect(host.getByRole('button',{name:'Download replay'})).toBeVisible();await expect(host.locator('.debug-json').first()).toContainText('"viewHashMatches": true');

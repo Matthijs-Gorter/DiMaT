@@ -8,10 +8,18 @@ type PlacementMode='road'|'settlement'|'city'|'robber'|null;
 type PendingAction={sequence:number;targetKey?:string};
 const SVG_NS='http://www.w3.org/2000/svg';
 const COLORS=['#37a9d2','#e16c59','#e2b941','#7b68c6'];
-const BOARD_VIEWBOX=[-10,-9,20,18] as const;
 const PIPS:Record<number,number>={2:1,3:2,4:3,5:4,6:5,8:5,9:4,10:3,11:2,12:1};
 const RESOURCE_ICON:Record<'brick'|'lumber'|'wool'|'grain'|'ore',string>={brick:'▦',lumber:'♣',wool:'❖',grain:'✳',ore:'⬡'};
-const TILE_ASSETS:Record<Resource|'desert',string>={brick:'hill.svg',lumber:'forest.svg',wool:'pasture.svg',grain:'field.svg',ore:'mountain.svg',desert:'desert.svg'};
+const TILE_ASSETS:Record<Resource|'desert',string[]>={
+  brick:['spring-brick-01_7f42d4a906254196fa6f41d553030cdc_6e73f772.jpg','spring-brick-02_e5ce19e97b99d980ca3aafd2d5c0730a_bb218207.jpg','spring-brick-03_7175978f6e01bdf367f95737c6f4587c_d21667d6.jpg'],
+  lumber:['spring-wood-01_da70459324efafa075f57045d15e831c_acf197dc.jpg','spring-wood-02_157210c998d7e5a671c1f2d43d2d2ebd_ba2adf57.jpg','spring-wood-03_a270ef19fa914034a5b6ef6f71c02017_4a1a2831.jpg','spring-wood-04_f559f2dcc6134f88844f9920692b6692_17e75d5e.jpg'],
+  wool:['spring-sheep-01_fad9eca90c3bf1526027354ee0cb8a55_0afd8192.jpg','spring-sheep-02_04d320c15697346f2ed3af10e1545279_caeb47ab.jpg','spring-sheep-03_a206fac53074f07b0d77f77254c29737_014ea4b6.jpg','spring-sheep-04_8e080c2d31dc2585fe53c024389504e9_51ffc1ad.jpg'],
+  grain:['spring-wheat-01_2fb098a05ecb3522bdf3c4fdb82b7bad_8f4bdb11.jpg','spring-wheat-02_6cfca0ad0fb6b80082925cae42eb5c50_a2461162.jpg','spring-wheat-03_f92e7f66418340e929d811e72446554e_abe2fcc4.jpg','spring-wheat-04_e34ad9514ce47551ad80b4c61d248677_7f9e4913.jpg'],
+  ore:['spring-ore-01_26a8de8163f7bae9e767b03cdd03dad8_d63df9cf.jpg','spring-ore-02_f4feb28ae3778c59e7138c8bf2b3af14_c0680aff.jpg','spring-ore-03_30a295cbe17e5a05c0192eb8e7483e22_1a2fdc83.jpg'],
+  desert:['spring-desert_5a7254fc93af2f57547cf44d1174e95d_47e24ba1.jpg']
+};
+const HARBOR_MARKER_SIZE=.9;
+const HARBOR_OFFSET=1.1;
 const root=document.querySelector<HTMLDivElement>('#app')!;
 let view:PlayerView|undefined;
 let playerId='';let seatToken='';let roomId='';let socket:WebSocket|undefined;
@@ -27,7 +35,7 @@ const element=<K extends keyof HTMLElementTagNameMap>(tag:K,cls='',text='')=>{
 const svgElement=(tag:string)=>document.createElementNS(SVG_NS,tag);
 function playerColor(id:string){const index=Number(id.replace(/^p/,''));return COLORS[Number.isFinite(index)?index%COLORS.length:0]!;}
 function playerName(id:string){return seats.find(seat=>seat.playerId===id)?.displayName||id;}
-const RESOURCE_NAMES:Record<string,string>={brick:'baksteen',lumber:'hout',wool:'wol',grain:'graan',ore:'erts'};
+const RESOURCE_NAMES:Record<Resource,string>={brick:'brick',lumber:'hout',wool:'wol',grain:'graan',ore:'erts'};
 function eventText(event:GameEvent){
   const data=event as Record<string,unknown>,name=typeof data.playerId==='string'?playerName(data.playerId):'';
   switch(event.type){
@@ -114,16 +122,36 @@ function sendAction(action:GameAction,targetKey?:string){
 function createLine(parent:SVGElement,a:readonly[number,number],b:readonly[number,number],className:string){
   const line=svgElement('line');line.setAttribute('x1',String(a[0]));line.setAttribute('y1',String(a[1]));line.setAttribute('x2',String(b[0]));line.setAttribute('y2',String(b[1]));line.setAttribute('class',className);parent.append(line);return line;
 }
-function pointForVertex(v:PlayerView,id:number):[number,number]{const vertex=v.board.vertices[id]!;return [vertex.x*Math.sqrt(3),vertex.y];}
-function tileCenter(q:number,r:number):[number,number]{return [(2*q+r)*Math.sqrt(3),3*r];}
+function rotateBoardPoint(x:number,y:number):[number,number]{const angle=Math.PI/6;return [x*Math.cos(angle)-y*Math.sin(angle),x*Math.sin(angle)+y*Math.cos(angle)];}
+function pointForVertex(v:PlayerView,id:number):[number,number]{const vertex=v.board.vertices[id]!;return rotateBoardPoint(vertex.x*Math.sqrt(3),vertex.y);}
+function tileCenter(q:number,r:number):[number,number]{return rotateBoardPoint((2*q+r)*Math.sqrt(3),3*r);}
 function pointList(v:PlayerView,ids:number[]){return ids.map(id=>pointForVertex(v,id));}
-function convexHull(points:Array<[number,number]>):Array<[number,number]>{
-  const sorted=[...points].sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
-  const cross=(o:readonly[number,number],a:readonly[number,number],b:readonly[number,number])=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
-  const lower:Array<[number,number]>=[],upper:Array<[number,number]>=[];
-  for(const p of sorted){while(lower.length>=2&&cross(lower[lower.length-2]!,lower[lower.length-1]!,p)<=0)lower.pop();lower.push(p);}
-  for(const p of sorted.slice().reverse()){while(upper.length>=2&&cross(upper[upper.length-2]!,upper[upper.length-1]!,p)<=0)upper.pop();upper.push(p);}
-  lower.pop();upper.pop();return lower.concat(upper);
+function terrainAsset(kind:Resource|'desert',seed:number,tileId:number):string{
+  let hash=(seed^Math.imul(tileId+1,0x9e3779b1))>>>0;
+  hash=Math.imul(hash^(hash>>>16),0x7feb352d);hash=Math.imul(hash^(hash>>>15),0x846ca68b);hash^=hash>>>16;
+  const variants=TILE_ASSETS[kind];return variants[(hash>>>0)%variants.length]!;
+}
+function harborPositions(v:PlayerView){
+  const harbors=new Map<number,{vertices:number[];kind:string;ratio:number}>();
+  for(const vertex of v.board.vertices)if(vertex.harbor){const harbor=harbors.get(vertex.harbor.id)??{vertices:[],kind:vertex.harbor.kind,ratio:vertex.harbor.ratio};harbor.vertices.push(vertex.id);harbors.set(vertex.harbor.id,harbor);}
+  return [...harbors.entries()].flatMap(([id,harbor])=>{
+    if(harbor.vertices.length!==2)throw new Error(`Harbor ${id} must have exactly two coastline vertices`);
+    const [first,second]=harbor.vertices as [number,number];
+    const edge=v.board.edges.find(candidate=>candidate.vertices.includes(first)&&candidate.vertices.includes(second));
+    if(!edge||edge.tiles.length!==1)throw new Error(`Harbor ${id} must lie on a coastline edge`);
+    const [a,b]=pointList(v,harbor.vertices) as [[number,number],[number,number]],coast:[number,number]=[(a[0]+b[0])/2,(a[1]+b[1])/2];
+    const tile=v.board.tiles[edge.tiles[0]!]!,inside=tileCenter(tile.q,tile.r),dx=coast[0]-inside[0],dy=coast[1]-inside[1],length=Math.hypot(dx,dy);
+    if(length===0)throw new Error(`Harbor ${id} has no outward coastline direction`);
+    const center:[number,number]=[coast[0]+dx/length*HARBOR_OFFSET,coast[1]+dy/length*HARBOR_OFFSET];
+    const radius=HARBOR_MARKER_SIZE/2,endpoint=(point:[number,number]):[number,number]=>{const x=point[0]-center[0],y=point[1]-center[1],distance=Math.hypot(x,y);if(distance<=radius)throw new Error(`Harbor ${id} overlaps its coastline`);return [center[0]+x/distance*radius,center[1]+y/distance*radius];};
+    return [{id,...harbor,edgeId:edge.id,coastline:[[harbor.vertices[0]!,a],[harbor.vertices[1]!,b]] as [[number,[number,number]],[number,[number,number]]],center,connectors:[[harbor.vertices[0]!,endpoint(a)],[harbor.vertices[1]!,endpoint(b)]] as [[number,[number,number]],[number,[number,number]]]}];
+  });
+}
+function boardViewBox(v:PlayerView):[number,number,number,number]{
+  const points=v.board.vertices.map(vertex=>pointForVertex(v,vertex.id));
+  for(const harbor of harborPositions(v))points.push([harbor.center[0]-HARBOR_MARKER_SIZE/2,harbor.center[1]-HARBOR_MARKER_SIZE/2],[harbor.center[0]+HARBOR_MARKER_SIZE/2,harbor.center[1]+HARBOR_MARKER_SIZE/2]);
+  const padding=.8,xs=points.map(point=>point[0]),ys=points.map(point=>point[1]),left=Math.min(...xs)-padding,top=Math.min(...ys)-padding,right=Math.max(...xs)+padding,bottom=Math.max(...ys)+padding;
+  return [left,top,right-left,bottom-top];
 }
 function activePlacementMode(v:PlayerView):PlacementMode{
   if(v.phase==='setupSettlement')return 'settlement';if(v.phase==='setupRoad')return 'road';if(v.phase==='robber')return 'robber';return placementMode;
@@ -133,11 +161,9 @@ function drawTerrainIcon(group:SVGElement,kind:string,x:number,y:number){
   const glyph:Record<string,string>={brick:'▰',lumber:'♣',wool:'❖',grain:'✳',ore:'⬡',desert:'≈'};icon.textContent=glyph[kind]??'◆';group.append(icon);
 }
 function drawBoard(host:HTMLElement,v:PlayerView){
-  const svg=svgElement('svg') as SVGSVGElement;svg.setAttribute('viewBox',BOARD_VIEWBOX.join(' '));svg.setAttribute('preserveAspectRatio','xMidYMid meet');svg.setAttribute('role','img');svg.setAttribute('aria-label','Game board');svg.classList.add('board');
+  const initialViewBox=boardViewBox(v);const svg=svgElement('svg') as SVGSVGElement;svg.setAttribute('viewBox',initialViewBox.join(' '));svg.setAttribute('preserveAspectRatio','xMidYMid meet');svg.setAttribute('role','img');svg.setAttribute('aria-label','Game board');svg.classList.add('board');
   const mode=activePlacementMode(v);const defs=svgElement('defs'),tileLayer=svgElement('g'),roadLayer=svgElement('g'),harborLayer=svgElement('g'),pieceLayer=svgElement('g'),targetLayer=svgElement('g'),previewLayer=svgElement('g');
   tileLayer.setAttribute('class','tile-layer');roadLayer.setAttribute('class','road-layer');harborLayer.setAttribute('class','harbor-layer');pieceLayer.setAttribute('class','piece-layer');targetLayer.setAttribute('class','target-layer');previewLayer.setAttribute('class','preview-layer');
-  const shore=convexHull(v.board.vertices.filter(vertex=>vertex.tiles.length===1).map(vertex=>pointForVertex(v,vertex.id)));
-  const beach=svgElement('polygon');beach.setAttribute('points',shore.map(p=>p.join(',')).join(' '));beach.setAttribute('class','beach-rim');tileLayer.append(beach);
   const vertexTargets=new Map<number,GameAction>();
   if(mode==='settlement')for(const action of v.legalActions)if(action.type==='placeSettlement'||action.type==='buildSettlement')vertexTargets.set(action.vertex,action);
   if(mode==='city')for(const action of v.legalActions)if(action.type==='buildCity')vertexTargets.set(action.vertex,action);
@@ -147,13 +173,13 @@ function drawBoard(host:HTMLElement,v:PlayerView){
   if(mode==='robber')for(const action of v.legalActions)if(action.type==='moveRobber'||action.type==='playKnight'){const tile='tile'in action?action.tile:-1;const list=tileTargets.get(tile)??[];list.push(action);tileTargets.set(tile,list);}
 
   for(const tile of v.board.tiles){
-    const rolled=v.lastRoll?v.lastRoll[0]+v.lastRoll[1]:null;const produces=tile.number!==null&&tile.number===rolled;const polygon=svgElement('polygon'),points=pointList(v,tile.vertices),clip=svgElement('clipPath');clip.id=`tile-art-clip-${tile.id}`;clip.setAttribute('clipPathUnits','userSpaceOnUse');const clipShape=svgElement('polygon');clipShape.setAttribute('points',points.map(p=>p.join(',')).join(' '));clip.append(clipShape);defs.append(clip);
-    const [x,y]=tileCenter(tile.q,tile.r),art=svgElement('image');art.setAttribute('href',`/tiles/${TILE_ASSETS[tile.kind]}`);art.setAttribute('x',String(x-Math.sqrt(3)));art.setAttribute('y',String(y-2));art.setAttribute('width',String(2*Math.sqrt(3)));art.setAttribute('height','4');art.setAttribute('preserveAspectRatio','none');art.setAttribute('clip-path',`url(#${clip.id})`);art.setAttribute('class',`terrain-art${produces?' producing':''}`);art.setAttribute('pointer-events','none');art.dataset.kind=tile.kind;art.dataset.tile=String(tile.id);tileLayer.append(art);
+    const rolled=v.lastRoll?v.lastRoll[0]+v.lastRoll[1]:null;const produces=tile.number!==null&&tile.number===rolled;const polygon=svgElement('polygon'),points=pointList(v,tile.vertices),[x,y]=tileCenter(tile.q,tile.r),clip=svgElement('clipPath');clip.id=`tile-art-clip-${tile.id}`;clip.setAttribute('clipPathUnits','userSpaceOnUse');const clipShape=svgElement('polygon');clipShape.setAttribute('points',points.map(p=>p.join(',')).join(' '));clip.append(clipShape);defs.append(clip);
+    const art=svgElement('image');art.setAttribute('href',`/tiles/${terrainAsset(tile.kind,v.seed,tile.id)}`);art.setAttribute('x',String(x-2));art.setAttribute('y',String(y-Math.sqrt(3)));art.setAttribute('width','4');art.setAttribute('height',String(2*Math.sqrt(3)));art.setAttribute('preserveAspectRatio','none');art.setAttribute('clip-path',`url(#${clip.id})`);art.setAttribute('class',`terrain-art${produces?' producing':''}`);art.setAttribute('pointer-events','none');art.dataset.kind=tile.kind;art.dataset.tile=String(tile.id);tileLayer.append(art);
     polygon.setAttribute('points',points.map(p=>p.join(',')).join(' '));polygon.setAttribute('class',`hex terrain-${tile.kind}${tile.id===v.robberTile?' robber-tile':''}${produces?' producing':''}`);polygon.dataset.tile=String(tile.id);
     const title=svgElement('title');title.textContent=tile.number?`${tile.kind}: ${tile.number}, ${PIPS[tile.number]} pip(s)`:`${tile.kind}`;polygon.append(title);tileLayer.append(polygon);
     drawTerrainIcon(tileLayer,tile.kind,x,y+.58);
     if(tile.number){
-      const token=svgElement('circle');token.setAttribute('cx',String(x));token.setAttribute('cy',String(y));token.setAttribute('r','.73');token.setAttribute('class',`number-token${tile.number===6||tile.number===8?' hot':''}`);const probability=svgElement('title');probability.textContent=`Kans: ${PIPS[tile.number]}/36 (${((PIPS[tile.number]??0)/36*100).toFixed(1)}%)`;token.append(probability);tileLayer.append(token);
+      const token=svgElement('circle');token.setAttribute('cx',String(x));token.setAttribute('cy',String(y));token.setAttribute('r','.6');token.setAttribute('class',`number-token${tile.number===6||tile.number===8?' hot':''}`);const probability=svgElement('title');probability.textContent=`Kans: ${PIPS[tile.number]}/36 (${((PIPS[tile.number]??0)/36*100).toFixed(1)}%)`;token.append(probability);tileLayer.append(token);
       const number=svgElement('text');number.setAttribute('x',String(x));number.setAttribute('y',String(y+.16));number.setAttribute('text-anchor','middle');number.setAttribute('class','number-label');number.textContent=String(tile.number);tileLayer.append(number);
       const count=PIPS[tile.number]??0;for(let pip=0;pip<count;pip++){const dot=svgElement('circle');dot.setAttribute('cx',String(x+(pip-(count-1)/2)*.16));dot.setAttribute('cy',String(y+.43));dot.setAttribute('r','.045');dot.setAttribute('class','pip-dot');tileLayer.append(dot);}
     }
@@ -162,41 +188,39 @@ function drawBoard(host:HTMLElement,v:PlayerView){
   }
   for(const edge of v.board.edges){
     const [a,b]=edge.vertices.map(id=>pointForVertex(v,id)) as [[number,number],[number,number]];
-    const road=v.roads[edge.id];if(road){const piece=createLine(roadLayer,a,b,`road-piece player-${road.owner}`);piece.setAttribute('stroke-width','.38');}
+    const road=v.roads[edge.id];if(road){const piece=createLine(roadLayer,a,b,`road-piece player-${road.owner}`);piece.setAttribute('stroke-width','.2');}
     const action=edgeTargets.get(edge.id);if(action){const highlight=createLine(targetLayer,a,b,'legal-road-highlight');highlight.setAttribute('stroke','#a5ffc2');highlight.setAttribute('stroke-width','.2');highlight.setAttribute('stroke-dasharray','.1 .09');highlight.setAttribute('pointer-events','none');const dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy),halfWidth=.36,nx=-dy/length*halfWidth,ny=dx/length*halfWidth;const hit=svgElement('polygon');hit.setAttribute('points',[[a[0]+nx,a[1]+ny],[b[0]+nx,b[1]+ny],[b[0]-nx,b[1]-ny],[a[0]-nx,a[1]-ny]].map(point=>point.join(',')).join(' '));hit.setAttribute('class',`board-target road-edge legal${pending?.targetKey===`edge-${edge.id}`?' pending':''}`);hit.setAttribute('fill','#fff');hit.setAttribute('fill-opacity','.001');hit.setAttribute('pointer-events','all');hit.dataset.targetKey=`edge-${edge.id}`;targetLayer.append(hit);
       hit.addEventListener('click',()=>sendAction(action,`edge-${edge.id}`));hit.addEventListener('pointerenter',()=>showPiecePreview(previewLayer,'road',[(a[0]+b[0])/2,(a[1]+b[1])/2],playerColor(playerId),[a,b]));hit.addEventListener('pointerleave',()=>previewLayer.replaceChildren());}
   }
-  const harbors=new Map<number,{vertices:number[];kind:string;ratio:number}>();
-  for(const vertex of v.board.vertices)if(vertex.harbor){const item=harbors.get(vertex.harbor.id)??{vertices:[],kind:vertex.harbor.kind,ratio:vertex.harbor.ratio};item.vertices.push(vertex.id);harbors.set(vertex.harbor.id,item);}
-  for(const harbor of harbors.values()){
-    if(harbor.vertices.length!==2)continue;const pts=pointList(v,harbor.vertices),center:[number,number]=[(pts[0]![0]+pts[1]![0])/2,(pts[0]![1]+pts[1]![1])/2];const active=harbor.vertices.some(id=>v.buildings[id]?.owner===Number(playerId.slice(1)));
-    const group=svgElement('g');group.setAttribute('class',`harbor${active?' harbor-active':''}`);for(const point of pts)createLine(group,center,point,'harbor-connector');const marker=svgElement('circle');marker.setAttribute('cx',String(center[0]));marker.setAttribute('cy',String(center[1]));marker.setAttribute('r','.62');marker.setAttribute('class','harbor-marker');group.append(marker);const label=svgElement('text');label.setAttribute('x',String(center[0]));label.setAttribute('y',String(center[1]+.14));label.setAttribute('text-anchor','middle');label.setAttribute('class','harbor-label');label.textContent=harbor.kind==='generic'?`${harbor.ratio}:1`:`${harbor.ratio}:1 ${RESOURCE_ICON[harbor.kind as keyof typeof RESOURCE_ICON]??'◆'}`;group.append(label);harborLayer.append(group);
+  for(const harbor of harborPositions(v)){
+    const active=harbor.vertices.some(id=>v.buildings[id]?.owner===Number(playerId.slice(1)));
+    const group=svgElement('g');group.setAttribute('class',`harbor${active?' harbor-active':''}`);group.dataset.harbor=String(harbor.id);group.dataset.edge=String(harbor.edgeId);for(let index=0;index<harbor.connectors.length;index++){const [vertex,start]=harbor.coastline[index]!,[,end]=harbor.connectors[index]!,connector=createLine(group,start,end,'harbor-connector');connector.dataset.harbor=String(harbor.id);connector.dataset.vertex=String(vertex);}const marker=svgElement('circle');marker.setAttribute('cx',String(harbor.center[0]));marker.setAttribute('cy',String(harbor.center[1]));marker.setAttribute('r',String(HARBOR_MARKER_SIZE/2));marker.setAttribute('class','harbor-marker');group.append(marker);const label=svgElement('text');label.setAttribute('x',String(harbor.center[0]));label.setAttribute('y',String(harbor.center[1]+.14));label.setAttribute('text-anchor','middle');label.setAttribute('class','harbor-label');label.textContent=harbor.kind==='generic'?`${harbor.ratio}:1`:`${harbor.ratio}:1 ${RESOURCE_ICON[harbor.kind as keyof typeof RESOURCE_ICON]??'◆'}`;group.append(label);harborLayer.append(group);
   }
   for(const vertex of v.board.vertices){
     const [x,y]=pointForVertex(v,vertex.id),building=v.buildings[vertex.id];
     if(building){const group=svgElement('g');group.setAttribute('class',`building-piece player-${building.owner}`);group.setAttribute('transform',`translate(${x},${y})`);if(building.kind==='settlement'){const house=svgElement('path');house.setAttribute('d','M-.48 .02 L0 -.5 L.48 .02 V.47 H-.48 Z');group.append(house);}else{const house=svgElement('path');house.setAttribute('d','M-.55 -.25 L-.22 -.55 L.12 -.25 L.4 -.48 L.55 -.28 V.48 H-.55 Z');group.append(house);const door=svgElement('rect');door.setAttribute('x','-.12');door.setAttribute('y','.12');door.setAttribute('width','.24');door.setAttribute('height','.36');door.setAttribute('class','building-door');group.append(door);}pieceLayer.append(group);}
     const action=vertexTargets.get(vertex.id);if(action){const glow=svgElement('circle');glow.setAttribute('cx',String(x));glow.setAttribute('cy',String(y));glow.setAttribute('r','.43');glow.setAttribute('class',`legal-vertex-glow${pending?.targetKey===`vertex-${vertex.id}`?' pending':''}`);targetLayer.append(glow);const hit=svgElement('circle');hit.setAttribute('cx',String(x));hit.setAttribute('cy',String(y));hit.setAttribute('r','1.05');hit.setAttribute('fill','transparent');hit.setAttribute('pointer-events','all');hit.setAttribute('class',`board-target spot legal legal-vertex${pending?.targetKey===`vertex-${vertex.id}`?' pending':''}`);hit.dataset.targetKey=`vertex-${vertex.id}`;hit.addEventListener('click',()=>sendAction(action,`vertex-${vertex.id}`));hit.addEventListener('pointerenter',()=>showPiecePreview(previewLayer,action.type==='buildCity'?'city':'settlement',[x,y],playerColor(playerId)));hit.addEventListener('pointerleave',()=>previewLayer.replaceChildren());targetLayer.append(hit);}
   }
-  svg.append(defs,tileLayer,roadLayer,harborLayer,pieceLayer,targetLayer,previewLayer);let box=[-10,-9,20,18],drag:{x:number;y:number;box:number[];moved:boolean}|null=null;const pointers=new Map<number,{x:number;y:number}>();let pinchStart:{distance:number;box:number[]}|null=null;
+  svg.append(defs,tileLayer,roadLayer,harborLayer,pieceLayer,targetLayer,previewLayer);let box=[...initialViewBox],drag:{x:number;y:number;box:number[];moved:boolean}|null=null;const pointers=new Map<number,{x:number;y:number}>();let pinchStart:{distance:number;box:number[]}|null=null;
   const controls=element('div','board-controls'),zoomOut=element('button','','−'),zoomLabel=element('span','muted','100%'),zoomIn=element('button','','+'),center=element('button','','Hercentreer');zoomOut.setAttribute('aria-label','Uitzoomen');zoomIn.setAttribute('aria-label','Inzoomen');
   const constrainViewBox=(next:number[])=>{
-    const [baseX,baseY,baseWidth,baseHeight]=BOARD_VIEWBOX,[width,height]=next.slice(2);
+    const [baseX,baseY,baseWidth,baseHeight]=initialViewBox,[width,height]=next.slice(2);
     const limitCenter=(center:number,size:number,baseCenter:number,baseSize:number)=>Math.max(baseCenter-Math.max(0,(size-baseSize)/2)-baseSize*.25,Math.min(baseCenter+Math.max(0,(size-baseSize)/2)+baseSize*.25,center));
     const x=limitCenter(next[0]!+width/2,width,baseX+baseWidth/2,baseWidth)-width/2;
     const y=limitCenter(next[1]!+height/2,height,baseY+baseHeight/2,baseHeight)-height/2;
     return [x,y,width,height];
   };
   const updateViewBox=()=>svg.setAttribute('viewBox',box.join(' '));
-  const setZoom=(factor:number)=>{const width=Math.max(13,Math.min(30,box[2]!*factor)),height=width*.9,cx=box[0]!+box[2]!/2,cy=box[1]!+box[3]!/2;box=constrainViewBox([cx-width/2,cy-height/2,width,height]);updateViewBox();zoomLabel.textContent=`${Math.round(BOARD_VIEWBOX[2]/width*100)}%`;};
-  zoomOut.onclick=()=>setZoom(1.15);zoomIn.onclick=()=>setZoom(.87);center.onclick=()=>{box=[...BOARD_VIEWBOX];updateViewBox();zoomLabel.textContent='100%';};controls.append(zoomOut,zoomLabel,zoomIn,center);
+  const setZoom=(factor:number)=>{const width=Math.max(initialViewBox[2]*.65,Math.min(initialViewBox[2]*1.5,box[2]!*factor)),height=width*initialViewBox[3]/initialViewBox[2],cx=box[0]!+box[2]!/2,cy=box[1]!+box[3]!/2;box=constrainViewBox([cx-width/2,cy-height/2,width,height]);updateViewBox();zoomLabel.textContent=`${Math.round(initialViewBox[2]/width*100)}%`;};
+  zoomOut.onclick=()=>setZoom(1.15);zoomIn.onclick=()=>setZoom(.87);center.onclick=()=>{box=[...initialViewBox];updateViewBox();zoomLabel.textContent='100%';};controls.append(zoomOut,zoomLabel,zoomIn,center);
   svg.addEventListener('wheel',event=>{event.preventDefault();setZoom(event.deltaY>0?1.08:.92);},{passive:false});
   svg.addEventListener('pointerdown',event=>{if(event.button!==0||event.target instanceof Element&&event.target.closest('.board-target'))return;pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});svg.setPointerCapture(event.pointerId);if(pointers.size===2){const [a,b]=[...pointers.values()];pinchStart={distance:Math.hypot(a!.x-b!.x,a!.y-b!.y),box:[...box]};drag=null;return;}drag={x:event.clientX,y:event.clientY,box:[...box],moved:false};});
-  svg.addEventListener('pointermove',event=>{if(pointers.has(event.pointerId))pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});if(pinchStart&&pointers.size>=2){const [a,b]=[...pointers.values()],distance=Math.max(1,Math.hypot(a!.x-b!.x,a!.y-b!.y)),start=pinchStart.box,width=Math.max(13,Math.min(30,start[2]!*pinchStart.distance/distance)),height=width*.9;box=constrainViewBox([start[0]!+(start[2]!-width)/2,start[1]!+(start[3]!-height)/2,width,height]);updateViewBox();zoomLabel.textContent=`${Math.round(BOARD_VIEWBOX[2]/width*100)}%`;return;}if(!drag)return;const dx=event.clientX-drag.x,dy=event.clientY-drag.y;if(Math.hypot(dx,dy)>4)drag.moved=true;if(!drag.moved)return;const rect=svg.getBoundingClientRect(),start=drag.box;box=constrainViewBox([start[0]!-dx*start[2]!/rect.width,start[1]!-dy*start[3]!/rect.height,start[2]!,start[3]!]);updateViewBox();});
+  svg.addEventListener('pointermove',event=>{if(pointers.has(event.pointerId))pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});if(pinchStart&&pointers.size>=2){const [a,b]=[...pointers.values()],distance=Math.max(1,Math.hypot(a!.x-b!.x,a!.y-b!.y)),start=pinchStart.box,width=Math.max(initialViewBox[2]*.65,Math.min(initialViewBox[2]*1.5,start[2]!*pinchStart.distance/distance)),height=width*initialViewBox[3]/initialViewBox[2];box=constrainViewBox([start[0]!+(start[2]!-width)/2,start[1]!+(start[3]!-height)/2,width,height]);updateViewBox();zoomLabel.textContent=`${Math.round(initialViewBox[2]/width*100)}%`;return;}if(!drag)return;const dx=event.clientX-drag.x,dy=event.clientY-drag.y;if(Math.hypot(dx,dy)>4)drag.moved=true;if(!drag.moved)return;const rect=svg.getBoundingClientRect(),start=drag.box;box=constrainViewBox([start[0]!-dx*start[2]!/rect.width,start[1]!-dy*start[3]!/rect.height,start[2]!,start[3]!]);updateViewBox();});
   svg.addEventListener('pointerup',event=>{pointers.delete(event.pointerId);if(pointers.size<2)pinchStart=null;if(svg.hasPointerCapture(event.pointerId))svg.releasePointerCapture(event.pointerId);drag=null;});svg.addEventListener('pointercancel',event=>{pointers.delete(event.pointerId);pinchStart=null;drag=null;});
   host.replaceChildren(controls,svg);
 }
 function showPiecePreview(layer:SVGElement,kind:'road'|'settlement'|'city',point:[number,number],color:string,edge?:[[number,number],[number,number]]){
-  layer.replaceChildren();if(kind==='road'&&edge){const preview=createLine(layer,edge[0],edge[1],'piece-preview');preview.setAttribute('stroke',color);preview.setAttribute('stroke-width','.38');return;}
+  layer.replaceChildren();if(kind==='road'&&edge){const preview=createLine(layer,edge[0],edge[1],'piece-preview');preview.setAttribute('stroke',color);preview.setAttribute('stroke-width','.24');return;}
   const preview=svgElement('circle');preview.setAttribute('cx',String(point[0]));preview.setAttribute('cy',String(point[1]));preview.setAttribute('r',kind==='city'?'.68':'.5');preview.setAttribute('fill',color);preview.setAttribute('class','piece-preview');layer.append(preview);
 }
 function chooseRobberAction(actions:GameAction[],tileId:number){
@@ -211,8 +235,8 @@ function renderBuildBar(viewState:PlayerView){
   const bar=element('section','build-bar');bar.setAttribute('aria-label','Bouwen en acties');
   const mode=activePlacementMode(viewState);
   const modes:[Exclude<PlacementMode,null>,string,string,boolean][]=[
-    ['road','Weg','1 baksteen · 1 hout',viewState.legalActions.some(a=>a.type==='buildRoad'||a.type==='placeRoad')],
-    ['settlement','Nederzetting','1 baksteen · 1 hout · 1 wol · 1 graan',viewState.legalActions.some(a=>a.type==='buildSettlement'||a.type==='placeSettlement')],
+    ['road','Weg','1 brick · 1 hout',viewState.legalActions.some(a=>a.type==='buildRoad'||a.type==='placeRoad')],
+    ['settlement','Nederzetting','1 brick · 1 hout · 1 wol · 1 graan',viewState.legalActions.some(a=>a.type==='buildSettlement'||a.type==='placeSettlement')],
     ['city','Stad','2 graan · 3 erts',viewState.legalActions.some(a=>a.type==='buildCity')]
   ];
   for(const [kind,label,cost,enabled] of modes){const button=element('button',`build-mode${mode===kind?' selected':''}`,label);button.title=cost;button.disabled=!enabled||!!pending;button.setAttribute('aria-pressed',String(mode===kind));button.onclick=()=>submitBuildMode(mode===kind?null:kind);bar.append(button);}
@@ -267,12 +291,12 @@ function renderDiscardPrompt(viewState:PlayerView){
   const required=Object.values(legal[0]!.resources).reduce<number>((total,count)=>total+(count??0),0),card=element('section','card discard-prompt');card.append(element('h2','','Weggooien na een 7'),element('p','muted',`Kies precies ${required} kaarten om af te leggen.`));
   const form=element('form','discard-form');form.noValidate=true;const fields=new Map<Resource,HTMLInputElement>();const total=element('output','discard-total',`0 / ${required} gekozen`);const submit=element('button','primary','Kaarten afleggen');submit.type='submit';submit.disabled=true;const feedback=element('p','discard-error');feedback.setAttribute('aria-live','polite');
   function update(){const selected=[...fields.values()].reduce((n,input)=>n+(Number(input.value)||0),0);const withinLimits=[...fields].every(([resource,input])=>Number(input.value)>=0&&Number(input.value)<=viewState.ownResources[resource]&&Number.isInteger(Number(input.value)));total.textContent=`${selected} / ${required} gekozen`;total.classList.toggle('valid',selected===required&&withinLimits);submit.disabled=selected!==required||!withinLimits||!!pending;}
-  for(const resource of ['brick','lumber','wool','grain','ore'] as Resource[]){const label=element('label','discard-field');const name=element('span','',`${RESOURCE_ICON[resource as keyof typeof RESOURCE_ICON]} ${resource}`);const available=element('small','',`${viewState.ownResources[resource]} beschikbaar`);const input=element('input');input.type='number';input.min='0';input.max=String(viewState.ownResources[resource]);input.step='1';input.value='0';input.inputMode='numeric';input.setAttribute('aria-label',`${resource} om af te leggen`);input.addEventListener('input',update);fields.set(resource,input);label.append(name,available,input);form.append(label);}
+  for(const resource of ['brick','lumber','wool','grain','ore'] as Resource[]){const label=element('label','discard-field');const name=element('span','',`${RESOURCE_ICON[resource as keyof typeof RESOURCE_ICON]} ${RESOURCE_NAMES[resource]}`);const available=element('small','',`${viewState.ownResources[resource]} beschikbaar`);const input=element('input');input.type='number';input.min='0';input.max=String(viewState.ownResources[resource]);input.step='1';input.value='0';input.inputMode='numeric';input.setAttribute('aria-label',`${RESOURCE_NAMES[resource]} om af te leggen`);input.addEventListener('input',update);fields.set(resource,input);label.append(name,available,input);form.append(label);}
   form.append(total,submit,feedback);form.onsubmit=event=>{event.preventDefault();update();if(submit.disabled)return;const resources=Object.fromEntries([...fields].map(([resource,input])=>[resource,Number(input.value)])) as Partial<Record<Resource,number>>;const action=findLegalDiscardAction(viewState.legalActions,resources);if(!action){feedback.textContent='Deze combinatie is geen beschikbare aflegactie. Controleer je selectie.';return;}feedback.textContent='';sendAction(action);};card.append(form);return card;
 }
 function renderTradePanel(viewState:PlayerView){
   const bankTrades=viewState.legalActions.filter((action):action is Extract<GameAction,{type:'maritimeTrade'}>=>action.type==='maritimeTrade');if(!bankTrades.length)return null;const panel=element('section','card trade-panel');panel.append(element('h2','','Bank- en havenhandel'),element('p','muted','Kies een beschikbare ruil op basis van je kaarten, bankvoorraad en havens.'));
-  const seen=new Set<string>();for(const action of bankTrades){const key=`${action.give}:${action.receive}`;if(seen.has(key))continue;seen.add(key);const harbors=viewState.board.vertices.filter(vertex=>vertex.harbor&&viewState.buildings[vertex.id]?.owner===Number(viewState.playerId.slice(1))).map(vertex=>vertex.harbor!);const ratio=harbors.some(harbor=>harbor.kind===action.give)?2:harbors.some(harbor=>harbor.kind==='generic')?3:4;panel.append(actionButton(`${ratio} ${action.give} → 1 ${action.receive}`,action));}
+  const seen=new Set<string>();for(const action of bankTrades){const key=`${action.give}:${action.receive}`;if(seen.has(key))continue;seen.add(key);const harbors=viewState.board.vertices.filter(vertex=>vertex.harbor&&viewState.buildings[vertex.id]?.owner===Number(viewState.playerId.slice(1))).map(vertex=>vertex.harbor!);const ratio=harbors.some(harbor=>harbor.kind===action.give)?2:harbors.some(harbor=>harbor.kind==='generic')?3:4;panel.append(actionButton(`${ratio} ${RESOURCE_NAMES[action.give]} → 1 ${RESOURCE_NAMES[action.receive]}`,action));}
   return panel;
 }
 function renderChat(){
@@ -296,8 +320,8 @@ function render(){
   const grid=element('div','gamegrid'),board=element('section','card boardcard');drawBoard(board,view);
   const side=element('aside','card game-sidebar');side.append(element('h2','','Spel'),element('p','muted',`Fase: ${view.phase} · Beurt: ${playerName(view.activePlayerId)}`));
   const dice=element('div','dice');if(view.lastRoll){dice.append(element('span','die',String(view.lastRoll[0])),element('span','die',String(view.lastRoll[1])),element('strong','dice-total',`= ${view.lastRoll[0]+view.lastRoll[1]}`));}else dice.append(element('span','muted','Dobbelstenen nog niet gegooid'));side.append(dice);
-  const hand=element('div','hand');for(const resource of ['brick','lumber','wool','grain','ore'] as Resource[]){const cell=element('div','resource');cell.append(document.createTextNode(`${RESOURCE_ICON[resource as keyof typeof RESOURCE_ICON]} ${resource}`),element('b','',String(view.ownResources[resource])));hand.append(cell);}
-  const bank=element('section','bank-panel');bank.append(element('h2','','Bank · ontwikkelingsstapel'));const bankCounts=element('div','hand');for(const resource of ['brick','lumber','wool','grain','ore'] as Resource[]){const cell=element('div','resource');cell.append(document.createTextNode(`${RESOURCE_ICON[resource as keyof typeof RESOURCE_ICON]} ${resource}`),element('b','',String(view.bank[resource])));bankCounts.append(cell);}bank.append(bankCounts,element('p','muted',`${view.developmentCardsRemaining} ontwikkelingskaarten over`));side.append(bank,renderDevelopmentHand(view));
+  const hand=element('div','hand');for(const resource of ['brick','lumber','wool','grain','ore'] as Resource[]){const cell=element('div','resource');cell.append(document.createTextNode(`${RESOURCE_ICON[resource as keyof typeof RESOURCE_ICON]} ${RESOURCE_NAMES[resource]}`),element('b','',String(view.ownResources[resource])));hand.append(cell);}
+  const bank=element('section','bank-panel');bank.append(element('h2','','Bank · ontwikkelingsstapel'));const bankCounts=element('div','hand');for(const resource of ['brick','lumber','wool','grain','ore'] as Resource[]){const cell=element('div','resource');cell.append(document.createTextNode(`${RESOURCE_ICON[resource as keyof typeof RESOURCE_ICON]} ${RESOURCE_NAMES[resource]}`),element('b','',String(view.bank[resource])));bankCounts.append(cell);}bank.append(bankCounts,element('p','muted',`${view.developmentCardsRemaining} ontwikkelingskaarten over`));side.append(bank,renderDevelopmentHand(view));
   const players=element('div','players');for(const player of view.players){const isActive=player.id===view.activePlayerId,status=botStatuses.find(item=>item.playerId===player.id);const panel=element('article',`player-panel player-${Number(player.id.slice(1))}${isActive?' active':''}`);panel.append(element('strong','',`${playerName(player.id)}${player.id===playerId?' (jij)':''}`));const badges=element('div','player-badges');if(isActive)badges.append(element('span','pill','Aan zet'));if(seats.find(seat=>seat.playerId===player.id)?.bot)badges.append(element('span','pill',status?.status==='thinking'?'Bot denkt…':'Bot'));panel.append(badges,element('p','player-card-count',`${player.resourceCount+player.developmentCardCount} kaarten`));players.append(panel);}
   const left=element('aside','card game-left-sidebar');left.setAttribute('aria-label','Spelers en gebeurtenissen');left.append(element('h2','','Spelers'),players,element('h2','event-log-title','Gebeurtenissen'));for(const line of events.filter(item=>!item.startsWith('Fout ')).slice(0,10))left.append(element('p','event',line));
   const picker=renderRobberPicker();if(picker)side.append(picker);
