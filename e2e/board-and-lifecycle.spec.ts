@@ -16,6 +16,45 @@ async function clickBoardTarget(page:Page,selector:string){
   await page.mouse.click(bounds.x+bounds.width/2,bounds.y+bounds.height/2);
 }
 
+async function reachHostBuildPhase(host:Page,guest:Page){
+  await host.getByRole('button',{name:'Start spel'}).click();
+  for(let step=0;step<40;step++){
+    const phaseText=await host.locator('.game-sidebar>p.muted').textContent();if(phaseText?.includes('Fase: roll'))break;
+    const active=await host.locator('.player-panel.active').textContent();if(!active)continue;
+    if(active.includes('Bot 1')){await expect.poll(async()=>!(await host.locator('.player-panel.active').textContent())?.includes('Bot 1'),{timeout:10000}).toBe(true);continue;}
+    const page=active.includes('Host')?host:guest;
+    if(phaseText?.includes('setupSettlement')){await clickBoardTarget(page,'.spot.legal');await expect(page.locator('.game-sidebar>p.muted')).toContainText('setupRoad');}
+    if((await page.locator('.game-sidebar>p.muted').textContent())?.includes('setupRoad')){await clickBoardTarget(page,'.road-edge.legal');await expect(page.locator('.game-sidebar>p.muted')).not.toContainText('setupRoad',{timeout:5000});}
+  }
+  await expect(host.locator('.game-sidebar>p.muted')).toContainText('Fase: roll');
+  await host.getByRole('button',{name:'Gooi de dobbelstenen'}).click();
+  await expect.poll(async()=>await host.locator('.game-sidebar>p.muted').textContent()).toMatch(/Fase: (robber|build)/);
+  if((await host.locator('.game-sidebar>p.muted').textContent())?.includes('Fase: robber'))await clickBoardTarget(host,'.legal-tile[data-victim-count="0"]');
+  await expect(host.locator('.game-sidebar>p.muted')).toContainText('Fase: build');
+}
+
+async function tradeablePair(host:Page,guest:Page){
+  const readHand=async(page:Page)=>page.locator('.bottom-bar .resource').evaluateAll(cells=>Object.fromEntries(cells.map(cell=>{
+    const label=cell.childNodes[0]?.textContent?.trim().split(' ').at(-1)??'',value=Number(cell.querySelector('b')?.textContent);
+    const resource=({brick:'brick',hout:'lumber',wol:'wool',graan:'grain',erts:'ore'} as Record<string,string>)[label];return [resource,value];
+  }).filter(([resource])=>typeof resource==='string')));
+  const hostHand=await readHand(host) as Record<string,number>,guestHand=await readHand(guest) as Record<string,number>;
+  const give=Object.keys(hostHand).find(resource=>hostHand[resource]!>0&&Object.keys(guestHand).some(want=>want!==resource&&guestHand[want]!>0));
+  const want=Object.keys(guestHand).find(resource=>resource!==give&&guestHand[resource]!>0);
+  if(!give||!want)throw new Error(`No compatible trade resources: host=${JSON.stringify(hostHand)} guest=${JSON.stringify(guestHand)}`);
+  return {give,want,hostHand,guestHand};
+}
+
+async function makeHumanTradeOffer(host:Page,guest:Page){
+  const pair=await tradeablePair(host,guest);
+  const resourceName=(resource:string)=>({brick:'brick',lumber:'hout',wool:'wol',grain:'graan',ore:'erts'} as Record<string,string>)[resource]!;
+  await host.getByRole('button',{name:`Meer ${resourceName(pair.give)} geven`}).click();
+  await host.getByRole('button',{name:`Meer ${resourceName(pair.want)} vragen`}).click();
+  await host.getByLabel('Aanbieden aan Guest').check();
+  await host.getByRole('button',{name:'Bied aan'}).click();
+  return pair;
+}
+
 test('lobby does not expose action submission before the server starts the game',async({browser})=>{
   const {host,hostContext,guestContext}=await createTwoHumansAndBot(browser);
   await expect(host.locator('.actions')).toBeHidden();
@@ -120,6 +159,44 @@ test('both humans complete the full setup on the board and roll to begin play',a
   const bankTotal=await host.locator('.bank-panel .resource b').evaluateAll(nodes=>nodes.reduce((sum,node)=>sum+Number(node.textContent),0));expect(bankTotal).toBeLessThan(95);
   await host.getByRole('button',{name:'Gooi de dobbelstenen'}).click();await expect.poll(async()=>await host.locator('.game-sidebar>p.muted').textContent()).toMatch(/Fase: (robber|build)/);if((await host.locator('.game-sidebar>p.muted').textContent())?.includes('Fase: robber')){await clickBoardTarget(host,'.legal-tile');if(await host.locator('.victim-picker').count())await host.locator('.victim-picker button').first().click();}await expect(host.locator('.game-sidebar>p.muted')).toContainText('Fase: build');
   await host.getByRole('button',{name:'Weg',exact:true}).click();await expect(host.locator('.road-edge.legal').first()).toBeVisible();await clickBoardTarget(host,'.road-edge.legal');await expect(host.locator('.road-piece')).toHaveCount(7);
+  await guestContext.close();await hostContext.close();
+});
+
+test('players offer and accept a domestic trade and both hands update',async({browser})=>{
+  const {host,guest,hostContext,guestContext}=await createTwoHumansAndBot(browser);
+  await reachHostBuildPhase(host,guest);
+  const tradePanel=host.locator('.trade-panel');await expect(tradePanel).toHaveAttribute('open','');
+  await tradePanel.locator('summary').click();await expect(tradePanel).not.toHaveAttribute('open','');
+  await tradePanel.locator('summary').click();await expect(tradePanel).toHaveAttribute('open','');
+  const pair=await makeHumanTradeOffer(host,guest);
+  await expect(guest.locator('.incoming-trade')).toContainText('Ruilvoorstel');
+  await guest.getByRole('button',{name:'Accepteren'}).click();
+  await expect(host.locator('.open-trade-offer')).toHaveCount(0);
+  const hostAfter=await tradeablePair(host,guest);
+  expect(hostAfter.hostHand[pair.give]).toBe(pair.hostHand[pair.give]!-1);
+  expect(hostAfter.hostHand[pair.want]).toBe(pair.hostHand[pair.want]!+1);
+  expect(hostAfter.guestHand[pair.give]).toBe(pair.guestHand[pair.give]!+1);
+  expect(hostAfter.guestHand[pair.want]).toBe(pair.guestHand[pair.want]!-1);
+  await expect(host.locator('.game-left-sidebar .event').first()).toContainText('ruilde met Guest');
+  await expect(tradePanel).toHaveAttribute('open','');
+  await guestContext.close();await hostContext.close();
+});
+
+test('a trade recipient can decline an offer',async({browser})=>{
+  const {host,guest,hostContext,guestContext}=await createTwoHumansAndBot(browser);
+  await reachHostBuildPhase(host,guest);await makeHumanTradeOffer(host,guest);
+  await guest.getByRole('button',{name:'Afwijzen'}).click();
+  await expect(host.locator('.open-trade-offer')).toContainText('Afgewezen door: Guest');
+  await expect(host.locator('.game-left-sidebar .event').first()).toContainText('wees een ruilvoorstel af');
+  await guestContext.close();await hostContext.close();
+});
+
+test('a human can reconnect while a targeted trade offer remains open',async({browser})=>{
+  const {host,guest,hostContext,guestContext}=await createTwoHumansAndBot(browser);
+  await reachHostBuildPhase(host,guest);await makeHumanTradeOffer(host,guest);
+  await guest.reload();
+  await expect(guest.locator('.incoming-trade')).toContainText('Ruilvoorstel');
+  await expect(guest.locator('.incoming-trade')).toContainText('Host');
   await guestContext.close();await hostContext.close();
 });
 

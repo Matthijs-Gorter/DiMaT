@@ -4,6 +4,8 @@ import { randomInt, type GameAction, type PlayerView } from '@dimat/engine';
 export function chooseRandomAction(view: PlayerView, seed: number): GameAction {
   const actions=view.legalActions;
   if(!actions.length)throw new Error(`No legal actions for ${view.playerId} in ${view.phase}`);
+  const responses=actions.filter(action=>action.type==='acceptTrade'||action.type==='declineTrade');
+  if(view.tradeOffer&&responses.length)return chooseRandomFromActions(responses,seed);
   return chooseRandomFromActions(actions.filter(a=>a.type!=='domesticTrade'),seed);
 }
 

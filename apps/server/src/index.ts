@@ -3,7 +3,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { Worker } from 'node:worker_threads';
-import { apply, createGame, legalActions, replayGame, viewFor, type GameAction, type GameEvent, type GameSettings, type GameState, type PlayerView } from '@dimat/engine';
+import { apply, createGame, legalActions, replayGame, validateTradeAction, viewFor, type GameAction, type GameEvent, type GameSettings, type GameState, type PlayerView } from '@dimat/engine';
 import { chooseRandomAction } from '@dimat/bots';
 import { clientMessageSchema, createRoomSchema, type BotStatus, type RoomLifecycle, type ServerMessage } from '@dimat/protocol';
 
@@ -85,7 +85,7 @@ if(process.env.DEBUG==='1'){app.get('/debug/rooms/:id',debugRoom);app.get('/api/
 function transition(room:Room,action:GameAction,outcome:'human'|'bot'='human',clientSequence?:number){
   if(room.lifecycle!=='started')throw new RoomError('GAME_NOT_STARTED','The game has not started.',{lifecycle:room.lifecycle});
   const legal=legalActions(room.state,action.playerId);
-  if(!legal.some(candidate=>canonical(candidate)===canonical(action))){
+  if(action.type==='domesticTrade'||(!legal.some(candidate=>canonical(candidate)===canonical(action))&&!validateTradeAction(room.state,action))){
     const expected=room.state.players[room.state.activePlayer]?.id;
     const isExpectedSeat=action.playerId===expected||room.state.pendingDiscards[0]!==undefined&&action.playerId===room.state.players[room.state.pendingDiscards[0]]?.id;
     const code=isExpectedSeat?'ILLEGAL_ACTION':'NOT_YOUR_TURN';
@@ -111,7 +111,9 @@ async function driveBots(room:Room){
   try{
     let guard=0;
     while(room.lifecycle==='started'&&room.state.phase!=='finished'&&guard++<256){
-      const seat=room.seats[room.state.activePlayer];if(!seat?.bot)break;
+      const offer=room.state.phase==='build'?room.state.tradeOffer:null;
+      const responder=offer?.targets.find(id=>!offer.declinedBy.includes(id)&&room.seats.find(candidate=>candidate.playerId===id)?.bot);
+      const seat=responder?room.seats.find(candidate=>candidate.playerId===responder):room.seats[room.state.activePlayer];if(!seat?.bot)break;
       const view=viewFor(room.state,seat.playerId),seed=(room.state.rngState^room.actions.length)>>>0;let action:GameAction;const startedAt=performance.now();seat.botStatus='thinking';seat.botReason=undefined;broadcastRoom(room);
       try{action=await botAction(view,seat.level as 1|2,seed);}
       catch(error){

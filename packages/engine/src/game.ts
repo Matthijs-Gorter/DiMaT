@@ -1,6 +1,6 @@
 import { createBoard, adjacentVertices } from './board.js';
 import { randomInt, shuffle } from './random.js';
-import { RESOURCES, type DevCard, type GameAction, type GameEvent, type GameSettings, type GameState, type Player, type PlayerView, type ReplayInput, type Resource, type ResourceSet, type Transition } from './types.js';
+import { RESOURCES, type DevCard, type GameAction, type GameEvent, type GameSettings, type GameState, type Player, type PlayerView, type ReplayInput, type Resource, type ResourceSet, type Transition, type TradeOffer } from './types.js';
 
 const ZERO = (): ResourceSet => ({brick:0,lumber:0,wool:0,grain:0,ore:0});
 const START_BANK = (): ResourceSet => ({brick:19,lumber:19,wool:19,grain:19,ore:19});
@@ -32,6 +32,7 @@ export function createGame(seed:number,settings:Partial<GameSettings>={}):GameSt
     buildings:Array(board.vertices.length).fill(null),roads:Array(board.edges.length).fill(null),bank:START_BANK(),devDeck:deck.items,playedDevCards:[],
     phase:'setupSettlement',activePlayer:0,setupOrder:[...Array.from({length:playerCount},(_,i)=>i),...Array.from({length:playerCount},(_,i)=>playerCount-1-i)],setupPosition:0,setupRoadVertex:null,
     pendingDiscards:[],afterRobberPhase:'build',robberTile:board.desertTile,turnNumber:0,hasPlayedDevCard:false,longestRoadHolder:null,largestArmyHolder:null,winner:null,lastRoll:null,
+    tradeOffer:null,tradeCounterUsed:false,nextTradeOfferId:1,
   };
 }
 function legalSettlement(s:GameState,p:number,v:number,setup=false):boolean {
@@ -115,8 +116,8 @@ function victoryPointActionAvailable(s:GameState,p:number):boolean {
   const vp=s.players[p]!.devCards.filter(c=>c.kind==='victoryPoint').length;return vp>0&&score(s,p)>=s.settings.victoryTarget;
 }
 
-function generateLegalActions(s:GameState,playerId:string,options:{includeTrades?:boolean;includeDomesticTrade?:boolean;includeMaritimeTrade?:boolean}={}):GameAction[] {
-  const includeDomesticTrade=options.includeDomesticTrade??options.includeTrades??true;const includeMaritimeTrade=options.includeMaritimeTrade??options.includeTrades??true;
+function generateLegalActions(s:GameState,playerId:string,options:{includeTrades?:boolean;includeMaritimeTrade?:boolean}={}):GameAction[] {
+  const includeMaritimeTrade=options.includeMaritimeTrade??options.includeTrades??true;
   const p=ownIndex(s,playerId);if(p<0||s.phase==='finished'||s.winner!==null)return[];
   const base={playerId};const out:GameAction[]=[];const card=s.players[p]!;
   if(s.phase==='setupSettlement'){
@@ -138,7 +139,7 @@ function generateLegalActions(s:GameState,playerId:string,options:{includeTrades
     }
     if(victoryPointActionAvailable(s,p))out.push({...base,type:'revealVictoryPoint'});
   }else if(s.phase==='build'){
-    if(p!==s.activePlayer)return[];out.push({...base,type:'endTurn'});if(victoryPointActionAvailable(s,p))out.push({...base,type:'revealVictoryPoint'});
+    if(p===s.activePlayer){out.push({...base,type:'endTurn'});if(victoryPointActionAvailable(s,p))out.push({...base,type:'revealVictoryPoint'});
     if(card.roadsLeft>0&&canPay(card,COSTS.road))for(let eid=0;eid<s.board.edges.length;eid++)if(edgeCanExtend(s,p,eid))out.push({...base,type:'buildRoad',edge:eid});
     if(card.settlementsLeft>0&&canPay(card,COSTS.settlement))for(let v=0;v<s.board.vertices.length;v++)if(legalSettlement(s,p,v))out.push({...base,type:'buildSettlement',vertex:v});
     if(card.citiesLeft>0&&canPay(card,COSTS.city))for(let v=0;v<s.board.vertices.length;v++)if(s.buildings[v]?.owner===p&&s.buildings[v]?.kind==='settlement')out.push({...base,type:'buildCity',vertex:v});
@@ -151,17 +152,63 @@ function generateLegalActions(s:GameState,playerId:string,options:{includeTrades
       if(ownDev(s,p,'yearOfPlenty'))for(const a of RESOURCES)for(const b of RESOURCES)if(s.bank[a]>0&&(a===b?s.bank[a]>1:s.bank[b]>0))out.push({...base,type:'playYearOfPlenty',resources:[a,b]});
       if(ownDev(s,p,'monopoly'))for(const resource of RESOURCES)out.push({...base,type:'playMonopoly',resource});
     }
-    if(includeDomesticTrade)for(let partner=0;partner<s.players.length;partner++)if(partner!==p)for(const give of RESOURCES)for(const receive of RESOURCES)if(give!==receive){
-      const maxGive=card.resources[give],maxReceive=s.players[partner]!.resources[receive];for(let g=1;g<=maxGive;g++)for(let r=1;r<=maxReceive;r++)out.push({...base,type:'domesticTrade',partnerId:s.players[partner]!.id,give,receive,giveCount:g,receiveCount:r});
-    }
     if(includeMaritimeTrade)for(const give of RESOURCES){const ownedHarbors=s.board.vertices.map((v,i)=>s.buildings[i]?.owner===p?v.harbor:null).filter((h):h is NonNullable<typeof h>=>!!h);let ratio=4;for(const h of ownedHarbors)if(h.kind==='generic')ratio=Math.min(ratio,3);else if(h.kind===give)ratio=2;if(card.resources[give]<ratio)continue;for(const receive of RESOURCES)if(receive!==give&&s.bank[receive]>0)out.push({...base,type:'maritimeTrade',give,receive});}
+    }
+  }
+  const offer=s.tradeOffer;
+  if(offer&&s.phase==='build'){
+    if(playerId===offer.proposerId)out.push({...base,type:'cancelTrade',offerId:offer.id});
+    else if(offer.targets.includes(playerId)&&!offer.declinedBy.includes(playerId)){
+      const proposer=s.players[ownIndex(s,offer.proposerId)]!;
+      if(RESOURCES.every(resource=>proposer.resources[resource]>=(offer.give[resource]??0)&&card.resources[resource]>=(offer.want[resource]??0)))out.push({...base,type:'acceptTrade',offerId:offer.id});
+      out.push({...base,type:'declineTrade',offerId:offer.id});
+      if(!s.tradeCounterUsed)out.push({...base,type:'counterTrade',offerId:offer.id,partnerId:offer.proposerId,give:{},want:{}});
+    }
   }
   return out;
 }
 
+function validBundle(bundle:Partial<ResourceSet>):boolean{
+  if(!bundle||typeof bundle!=='object'||Array.isArray(bundle))return false;
+  if(Object.keys(bundle).some(key=>!RESOURCES.includes(key as typeof RESOURCES[number])))return false;
+  return RESOURCES.some(resource=>Number.isSafeInteger(bundle[resource])&&bundle[resource]!>0)
+    &&RESOURCES.every(resource=>bundle[resource]===undefined||Number.isSafeInteger(bundle[resource])&&bundle[resource]!>=0);
+}
+function validTradeTerms(state:GameState,proposerId:string,give:Partial<ResourceSet>,want:Partial<ResourceSet>):boolean{
+  const index=ownIndex(state,proposerId),proposer=state.players[index];
+  if(!proposer||!validBundle(give)||!validBundle(want))return false;
+  if(RESOURCES.some(resource=>(give[resource]??0)>0&&(want[resource]??0)>0))return false;
+  return RESOURCES.every(resource=>proposer.resources[resource]>=(give[resource]??0));
+}
+export function validateTradeAction(state:GameState,action:GameAction):boolean{
+  const player=ownIndex(state,action.playerId);
+  if(action.type==='proposeTrade'){
+    if(state.phase!=='build'||player!==state.activePlayer||!validTradeTerms(state,action.playerId,action.give,action.want))return false;
+    return Array.isArray(action.targets)&&action.targets.length>0&&new Set(action.targets).size===action.targets.length
+      &&action.targets.every(target=>target!==action.playerId&&ownIndex(state,target)>=0);
+  }
+  if(action.type==='counterTrade'){
+    const offer=state.tradeOffer;
+    const permission=generateLegalActions(state,action.playerId).some(candidate=>candidate.type==='counterTrade'&&candidate.offerId===action.offerId&&candidate.partnerId===action.partnerId);
+    return permission&&!state.tradeCounterUsed&&!!offer&&action.partnerId===offer.proposerId&&validTradeTerms(state,action.playerId,action.give,action.want);
+  }
+  if(action.type==='domesticTrade'){
+    const partnerIndex=ownIndex(state,action.partnerId),partner=state.players[partnerIndex];
+    return state.phase==='build'&&player===state.activePlayer&&player>=0&&!!partner&&action.partnerId!==action.playerId
+      &&RESOURCES.includes(action.give as typeof RESOURCES[number])&&RESOURCES.includes(action.receive as typeof RESOURCES[number])&&action.give!==action.receive
+      &&Number.isSafeInteger(action.giveCount)&&action.giveCount>0
+      &&Number.isSafeInteger(action.receiveCount)&&action.receiveCount>0
+      &&state.players[player]!.resources[action.give]>=action.giveCount&&partner.resources[action.receive]>=action.receiveCount;
+  }
+  return false;
+}
+
 export function apply(state:GameState,action:GameAction):Transition {
-  const legal=generateLegalActions(state,action.playerId,{includeDomesticTrade:action.type==='domesticTrade',includeMaritimeTrade:action.type==='maritimeTrade'});if(!legal.some(a=>canonical(a)===canonical(action)))throw new Error(`Illegal action ${action.type} for ${action.playerId} during ${state.phase}`);
+  const legal=generateLegalActions(state,action.playerId,{includeMaritimeTrade:action.type==='maritimeTrade'});if(!legal.some(a=>canonical(a)===canonical(action))&&!validateTradeAction(state,action))throw new Error(`Illegal action ${action.type} for ${action.playerId} during ${state.phase}`);
   const s=structuredClone(state);const events:GameEvent[]=[];const p=ownIndex(s,action.playerId);const player=s.players[p]!;
+  if(s.tradeOffer&&(action.type==='buildRoad'||action.type==='buildSettlement'||action.type==='buildCity'||action.type==='endTurn')){
+    events.push({type:'tradeCancelled',playerId:action.playerId,offerId:s.tradeOffer.id,reason:action.type==='endTurn'?'turn-ended':'built'});s.tradeOffer=null;s.tradeCounterUsed=false;
+  }
   switch(action.type){
     case 'placeSettlement': {
       s.buildings[action.vertex]={owner:p,kind:'settlement'};player.settlementsLeft--;events.push({type:'settlementPlaced',playerId:player.id,vertex:action.vertex});
@@ -218,6 +265,31 @@ export function apply(state:GameState,action:GameAction):Transition {
     case 'domesticTrade': {
       const partner=ownIndex(s,action.partnerId);player.resources[action.give]-=action.giveCount;s.players[partner]!.resources[action.give]+=action.giveCount;s.players[partner]!.resources[action.receive]-=action.receiveCount;player.resources[action.receive]+=action.receiveCount;events.push({type:'domesticTradeCompleted',playerId:player.id,partnerId:action.partnerId});break;
     }
+    case 'proposeTrade': {
+      if(s.tradeOffer)events.push({type:'tradeCancelled',playerId:s.tradeOffer.proposerId,offerId:s.tradeOffer.id,reason:'replaced'});
+      const tradeOffer:TradeOffer={id:s.nextTradeOfferId++,proposerId:player.id,give:{...action.give},want:{...action.want},targets:[...action.targets],declinedBy:[]};
+      s.tradeOffer=tradeOffer;s.tradeCounterUsed=false;
+      events.push({type:'tradeOffered',playerId:player.id,offerId:tradeOffer.id,targets:tradeOffer.targets,give:tradeOffer.give,want:tradeOffer.want});break;
+    }
+    case 'acceptTrade': {
+      const trade=s.tradeOffer!,proposer=s.players[ownIndex(s,trade.proposerId)]!;
+      if(!RESOURCES.every(resource=>proposer.resources[resource]>=(trade.give[resource]??0)&&player.resources[resource]>=(trade.want[resource]??0)))throw new Error('Trade offer no longer fits both players’ hands');
+      for(const resource of RESOURCES){const give=trade.give[resource]??0,want=trade.want[resource]??0;proposer.resources[resource]=proposer.resources[resource]!-give+want;player.resources[resource]=player.resources[resource]!-want+give;}
+      s.tradeOffer=null;s.tradeCounterUsed=false;
+      events.push({type:'domesticTradeCompleted',playerId:trade.proposerId,partnerId:player.id,give:trade.give,want:trade.want,offerId:trade.id});break;
+    }
+    case 'declineTrade': {
+      const trade=s.tradeOffer!;trade.declinedBy.push(player.id);events.push({type:'tradeDeclined',playerId:player.id,proposerId:trade.proposerId,offerId:trade.id});break;
+    }
+    case 'cancelTrade': {
+      const trade=s.tradeOffer!;s.tradeOffer=null;s.tradeCounterUsed=false;
+      events.push({type:'tradeCancelled',playerId:player.id,offerId:trade.id,reason:'proposer-cancelled'});break;
+    }
+    case 'counterTrade': {
+      const previous=s.tradeOffer!,tradeOffer:TradeOffer={id:s.nextTradeOfferId++,proposerId:player.id,give:{...action.give},want:{...action.want},targets:[previous.proposerId],declinedBy:[]};
+      s.tradeOffer=tradeOffer;s.tradeCounterUsed=true;
+      events.push({type:'tradeCountered',playerId:player.id,partnerId:previous.proposerId,offerId:tradeOffer.id,give:tradeOffer.give,want:tradeOffer.want});break;
+    }
     case 'maritimeTrade': {
       const harbor=s.board.vertices.map((v,i)=>s.buildings[i]?.owner===p?v.harbor:null).filter((h):h is NonNullable<typeof h>=>!!h);let ratio=4;for(const h of harbor)if(h.kind==='generic')ratio=Math.min(ratio,3);else if(h.kind===action.give)ratio=2;
       payResources(s,p,{[action.give]:ratio},events,'maritime-trade');giveResources(s,p,{[action.receive]:1},events,'maritime-trade');events.push({type:'maritimeTradeCompleted',playerId:player.id,give:action.give,receive:action.receive,ratio});break;
@@ -239,11 +311,11 @@ export function viewFor(s:GameState,playerId:string):PlayerView {
   const p=ownIndex(s,playerId);if(p<0)throw new Error(`Unknown player ${playerId}`);
   return {playerId,phase:s.phase,activePlayerId:s.players[s.activePlayer]!.id,turnNumber:s.turnNumber,hasPlayedDevCard:s.hasPlayedDevCard,bank:{...s.bank},developmentCardsRemaining:s.devDeck.length,seed:s.seed,settings:{...s.settings},
     players:s.players.map((pl,i)=>({id:pl.id,resourceCount:sum(pl.resources),developmentCardCount:pl.devCards.length,visibleVictoryPoints:score(s,i)-pl.devCards.filter(c=>c.kind==='victoryPoint').length,roadsLeft:pl.roadsLeft,settlementsLeft:pl.settlementsLeft,citiesLeft:pl.citiesLeft,knightsPlayed:pl.knightsPlayed,longestRoadLength:longestRoadLength(s,i),hasLongestRoad:s.longestRoadHolder===i,hasLargestArmy:s.largestArmyHolder===i})),
-    ownResources:{...s.players[p]!.resources},ownDevelopmentCards:structuredClone(s.players[p]!.devCards),buildings:structuredClone(s.buildings),roads:structuredClone(s.roads),board:structuredClone(s.board),robberTile:s.robberTile,legalActions:legalActions(s,playerId),winnerId:s.winner===null?null:s.players[s.winner]!.id,lastRoll:s.lastRoll?([...s.lastRoll] as [number,number]):null};
+    ownResources:{...s.players[p]!.resources},ownDevelopmentCards:structuredClone(s.players[p]!.devCards),buildings:structuredClone(s.buildings),roads:structuredClone(s.roads),    board:structuredClone(s.board),robberTile:s.robberTile,tradeOffer:structuredClone(s.tradeOffer),legalActions:legalActions(s,playerId),winnerId:s.winner===null?null:s.players[s.winner]!.id,lastRoll:s.lastRoll?([...s.lastRoll] as [number,number]):null};
 }
 export function replayGame(input:ReplayInput):GameState {let state=createGame(input.seed,input.settings);for(const action of input.actions)state=apply(state,action).state;return state;}
 export function legalActions(state:GameState,playerId:string):GameAction[]{return generateLegalActions(state,playerId);}
 export function publicActionList(state:GameState,playerId:string):readonly GameAction[]{return legalActions(state,playerId);}
-export function legalActionsForRandomBot(state:GameState,playerId:string):GameAction[]{return generateLegalActions(state,playerId,{includeDomesticTrade:false,includeMaritimeTrade:true});}
+export function legalActionsForRandomBot(state:GameState,playerId:string):GameAction[]{return generateLegalActions(state,playerId,{includeMaritimeTrade:true});}
 export function resourceTotal(state:GameState,resource:Resource):number{return state.bank[resource]+state.players.reduce((n,p)=>n+p.resources[resource],0);}
 export function cardCounts(state:GameState):Record<DevCard,number>{const result:Record<DevCard,number>={knight:state.devDeck.filter(c=>c==='knight').length,victoryPoint:state.devDeck.filter(c=>c==='victoryPoint').length,roadBuilding:state.devDeck.filter(c=>c==='roadBuilding').length,yearOfPlenty:state.devDeck.filter(c=>c==='yearOfPlenty').length,monopoly:state.devDeck.filter(c=>c==='monopoly').length};for(const p of state.players)for(const c of p.devCards)result[c.kind]++;for(const c of state.playedDevCards)result[c]++;return result;}

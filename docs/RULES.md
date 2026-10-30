@@ -47,7 +47,8 @@ A player without pieces of a kind cannot build it.
 
 ## 5. Trading
 
-- Domestic: only the active player trades with others; counter-offers allowed; non-active players cannot trade with each other. A trade must give at least 1 and receive at least 1 card, never the same resource type on both sides.
+- Domestic: only the active player may propose a trade, and only after rolling. Other players cannot trade with each other. Offers may contain multiple resource types on either side; each side must contain at least 1 card, and the same resource type cannot appear on both sides. A proposal requires the proposer to hold the offered cards. The recipient must consent; both hands are rechecked when an offer is accepted. A single counter-offer may be made to the original proposer. These online consent, bundle, and counter-depth details are project assumptions recorded in `DECISIONS.md`, not confirmed official-edition rules.
+- A pending offer remains open after a decline and records who declined. The proposer may cancel or replace it. Construction of a road, settlement, or city and ending the turn cancel it; buying a development card does not. Historical immediate `domesticTrade` actions remain replayable, but are not accepted by the live server.
 - Maritime: 4:1 default, 3:1 with a generic harbor, 2:1 with the matching specific harbor (best available applies). Harbor access needs a settlement/city on the harbor vertex.
 - Card counts are public; card types are hidden.
 
@@ -76,7 +77,7 @@ A player without pieces of a kind cannot build it.
 - Bank: shortage with multiple recipients gives nothing; with one recipient gives the remainder; year of plenty on a nearly empty bank.
 - Dev cards: same-turn play rejected; second card in a turn rejected; knight before roll; empty deck; hidden VP wins.
 - Setup: distance rule; second settlement pays out; reverse order; initial road attaches.
-- Trade: same-type rejected; harbor ratios; best ratio wins; non-active players cannot trade each other.
+- Trade: legacy same-type rejection and harbor ratios; consent-based offer lifecycle, bundles, invalid terms, stale hands, cancellation, counter-offer depth, and replay; non-active players cannot trade each other.
 - Pieces: city returns settlement; piece limits.
 - State machine: no build/trade before roll; cannot end turn while a discard or robber move is pending.
 - Win: only on own turn; immediately on reaching the target during own turn.

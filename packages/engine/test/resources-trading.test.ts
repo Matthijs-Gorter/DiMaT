@@ -17,7 +17,7 @@ describe('production and robber',()=>{
 
 describe('trade rules',()=>{
   it('rejects same-resource trades and non-active-player trades',()=>{
-    const s=stateAt('build');expect(legalActions(s,'p0').some(a=>a.type==='domesticTrade'&&a.give===a.receive)).toBe(false);expect(legalActions(s,'p1')).toEqual([]);
+    const s=stateAt('build');expect(legalActions(s,'p0').some(a=>a.type==='domesticTrade'||a.type==='proposeTrade')).toBe(false);expect(legalActions(s,'p1')).toEqual([]);
   });
   it('uses the best accessible harbor ratio',()=>{
     const s=stateAt('build');const harbors=s.board.vertices.map((v,i)=>v.harbor?i:-1).filter(v=>v>=0);for(const v of harbors)s.buildings[v]={owner:0,kind:'settlement'};s.players[0]!.resources.brick=2;s.bank.wool=1;const a=legalActions(s,'p0').find(x=>x.type==='maritimeTrade'&&x.give==='brick'&&x.receive==='wool');expect(a).toBeDefined();const result=apply(s,a!).events.find(e=>e.type==='maritimeTradeCompleted');expect(result?.ratio).toBe(2);
@@ -34,7 +34,7 @@ describe('maritime ratios and domestic bundles',()=>{
   it('uses 4:1 default maritime trade',()=>{const s=stateForRatio(4);expect(legalActions(s,'p0').some(a=>a.type==='maritimeTrade'&&a.give==='brick')).toBe(true);s.players[0]!.resources.brick=3;s.bank.brick=16;expect(legalActions(s,'p0').some(a=>a.type==='maritimeTrade'&&a.give==='brick')).toBe(false);});
   it('uses 3:1 with an accessible generic harbor',()=>{const s=stateForRatio(3);expect(legalActions(s,'p0').some(a=>a.type==='maritimeTrade'&&a.give==='brick')).toBe(true);});
   it('uses 2:1 with the matching specific harbor',()=>{const s=stateForRatio(2);expect(legalActions(s,'p0').some(a=>a.type==='maritimeTrade'&&a.give==='brick')).toBe(true);});
-  it('allows multi-card domestic offers with distinct resource types',()=>{const s=stateAt('build');s.players[0]!.resources.brick=2;s.players[1]!.resources.wool=1;expect(legalActions(s,'p0').some(a=>a.type==='domesticTrade'&&a.give==='brick'&&a.giveCount===2&&a.receive==='wool'&&a.receiveCount===1)).toBe(true);});
+  it('does not enumerate the unbounded proposal-term combinations',()=>{const s=stateAt('build');expect(legalActions(s,'p0').some(a=>a.type==='proposeTrade'||a.type==='domesticTrade')).toBe(false);});
 });
 
 describe('production details',()=>{

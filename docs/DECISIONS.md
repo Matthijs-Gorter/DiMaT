@@ -56,3 +56,13 @@
 - A debug bundle intentionally includes the full action log and the requesting seat's view. It can reveal hidden information and should be shared only with trusted collaborators.
 - State hashes use a stable FNV-1a hash over canonical JSON for both server and client views. This is intended to spot accidental view mismatches, not to provide cryptographic integrity.
 - Debug-only dice/resource/setup mutation helpers are deferred: directly mutating game state without replayable actions would invalidate the persisted deterministic replay.
+
+## 2026-10-30 — Phase 2b: consent-based domestic trade
+
+- **ASSUMPTION — bundled terms:** An offer may give and request multiple resource types. Each side must contain at least one card, counts must be positive integers, and a resource type cannot appear on both sides. The proposer must hold the offered cards when proposing; both hands are checked again at acceptance. Alternative: retain the Phase 1 one-type-per-side restriction.
+- **ASSUMPTION — consent and response:** A domestic transfer occurs only after an eligible target accepts. A decline is recorded publicly but does not close an offer, allowing other targets to respond. The proposer may cancel or replace the offer. Alternative: close the offer after the first decline or after every target declines.
+- **ASSUMPTION — counter-offers:** One counter-offer level is allowed; it replaces the original offer and is addressed only to its original proposer. A counter cannot be countered again. Alternative: permit an unbounded negotiation chain or disallow counters.
+- **Offer lifetime:** A pending offer is cancelled by explicit cancellation, replacement, successful acceptance, construction of a road/settlement/city, or end of turn. Buying a development card is not construction and does not itself cancel the offer.
+- **Action validation:** Do not enumerate proposed bundle combinations in `legalActions`; this would grow combinatorially with bundle size. The engine's `validateTradeAction` validates proposal/counter terms, while legal actions enumerate concrete responses. The server calls the same validator. Alternative: enumerate a bounded set of offers, which would impose an arbitrary cap.
+- **Legacy logs:** The engine and protocol continue to decode/replay immediate `domesticTrade` actions from old logs. The live server rejects them so current games always use consent.
+- Trade offers and response state are public in every `PlayerView`; resource hands remain private. Offer IDs are deterministic state, so replay reconstructs them.

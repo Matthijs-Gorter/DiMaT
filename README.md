@@ -23,6 +23,8 @@ Install dependencies, then run the server and web client in separate terminals:
 
 Open the Vite URL (normally `http://localhost:5173`). Create a room and share its invite URL; the other human joins before the host starts. The game server listens on port 3000 and keeps SQLite action logs in `dimat.sqlite` (override with `DIMAT_DB`). Seat tokens are stored by the browser for reconnect. For a container deployment, review `compose.yaml`, then run `docker compose up --build`; the web entry point is port 8080. The example systemd unit and Tailscale/firewall notes are in `deploy/README.md`.
 
+In the build phase, the active player can use **Ruilen** to offer resource bundles to selected players. Recipients can accept, decline, or make one counter-offer; bots respond to offers directed to them. Bank and harbor trades remain immediate. Domestic-trade bundle, consent, and counter-offer details are project assumptions documented in `docs/DECISIONS.md`.
+
 ### Local debug mode
 
 Run the server with diagnostics enabled and bound to localhost:

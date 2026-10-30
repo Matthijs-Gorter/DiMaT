@@ -14,6 +14,7 @@ export interface Building { owner: number; kind: 'settlement' | 'city'; }
 export interface Road { owner: number; }
 export interface HeldDevCard { kind: DevCard; boughtTurn: number; }
 export interface Player { id: string; resources: ResourceSet; devCards: HeldDevCard[]; knightsPlayed: number; roadsLeft: number; settlementsLeft: number; citiesLeft: number; revealedVictoryPoints: number; }
+export interface TradeOffer { id: number; proposerId: string; give: Partial<ResourceSet>; want: Partial<ResourceSet>; targets: string[]; declinedBy: string[]; }
 export interface GameSettings { playerCount: 3 | 4; victoryTarget: number; }
 export type Phase = 'setupSettlement' | 'setupRoad' | 'roll' | 'discard' | 'robber' | 'build' | 'finished';
 export interface GameState {
@@ -22,6 +23,7 @@ export interface GameState {
   phase: Phase; activePlayer: number; setupOrder: number[]; setupPosition: number; setupRoadVertex: number | null;
   pendingDiscards: number[]; afterRobberPhase: 'roll' | 'build'; robberTile: number; turnNumber: number; hasPlayedDevCard: boolean;
   longestRoadHolder: number | null; largestArmyHolder: number | null; winner: number | null; lastRoll: [number, number] | null;
+  tradeOffer: TradeOffer | null; tradeCounterUsed: boolean; nextTradeOfferId: number;
 }
 
 export interface BaseAction { playerId: string; }
@@ -40,6 +42,11 @@ export type GameAction =
   | (BaseAction & { type: 'playYearOfPlenty'; resources: Resource[] })
   | (BaseAction & { type: 'playMonopoly'; resource: Resource })
   | (BaseAction & { type: 'domesticTrade'; partnerId: string; give: Resource; receive: Resource; giveCount: number; receiveCount: number })
+  | (BaseAction & { type: 'proposeTrade'; give: Partial<ResourceSet>; want: Partial<ResourceSet>; targets: string[] })
+  | (BaseAction & { type: 'acceptTrade'; offerId: number })
+  | (BaseAction & { type: 'declineTrade'; offerId: number })
+  | (BaseAction & { type: 'cancelTrade'; offerId: number })
+  | (BaseAction & { type: 'counterTrade'; offerId: number; partnerId: string; give: Partial<ResourceSet>; want: Partial<ResourceSet> })
   | (BaseAction & { type: 'maritimeTrade'; give: Resource; receive: Resource })
   | (BaseAction & { type: 'endTurn' })
   | (BaseAction & { type: 'revealVictoryPoint' });
@@ -50,5 +57,5 @@ export interface PlayerView {
   playerId: string; phase: Phase; activePlayerId: string; turnNumber: number; hasPlayedDevCard: boolean; bank: ResourceSet; developmentCardsRemaining: number; seed: number; settings: GameSettings;
   players: Array<{ id: string; resourceCount: number; developmentCardCount: number; visibleVictoryPoints: number; roadsLeft: number; settlementsLeft: number; citiesLeft: number; knightsPlayed: number; longestRoadLength: number; hasLongestRoad: boolean; hasLargestArmy: boolean }>;
   ownResources: ResourceSet; ownDevelopmentCards: HeldDevCard[]; buildings: Array<Building | null>; roads: Array<Road | null>;
-  board: Board; robberTile: number; legalActions: GameAction[]; winnerId: string | null; lastRoll: [number, number] | null;
+  board: Board; robberTile: number; tradeOffer: TradeOffer | null; legalActions: GameAction[]; winnerId: string | null; lastRoll: [number, number] | null;
 }
