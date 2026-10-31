@@ -188,7 +188,7 @@ html[data-theme=light] .res-grain{--rc:#b78a0c}html[data-theme=light] .res-ore{-
 }
 .gx-main .gx-board .board{display:block;width:100%;height:100%;min-height:0;max-height:none;aspect-ratio:auto;border-radius:0}
 .gx-main .board-controls{
-  position:absolute;z-index:8;top:var(--gx-gap);right:calc(var(--gx-right) + var(--gx-gap));
+  position:absolute;z-index:8;bottom:calc(var(--gx-hud-h) + var(--gx-gap) + .4rem);right:calc(var(--gx-right) + var(--gx-gap));box-shadow:0 4px 16px rgba(0,0,0,.28);
   display:inline-flex;align-items:center;gap:0;padding:0;border:1px solid var(--gx-line-strong);
   border-radius:.55rem;overflow:hidden;background:var(--gx-surface-3)
 }
