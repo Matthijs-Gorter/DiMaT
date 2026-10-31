@@ -21,7 +21,7 @@ Install dependencies, then run the server and web client in separate terminals:
     pnpm --filter @dimat/server dev
     pnpm --filter @dimat/web dev
 
-Open the Vite URL (normally `http://localhost:5173`). Create a room and share its invite URL; the other human joins before the host starts. The game server listens on port 3000 and keeps SQLite action logs in `dimat.sqlite` (override with `DIMAT_DB`). Seat tokens are stored by the browser for reconnect. For a container deployment, review `compose.yaml`, then run `docker compose up --build`; the web entry point is port 8080. The example systemd unit and Tailscale/firewall notes are in `deploy/README.md`.
+Open the Vite URL (normally `http://localhost:5173`). Choose the number of human seats and bots when creating a room, then share its invite URL so the selected humans can join before the host starts. Base games have three or four total seats, so solo games need two or three bots and rooms with four humans cannot add bots. The game server listens on port 3000 and keeps SQLite action logs in `dimat.sqlite` (override with `DIMAT_DB`). Seat tokens are stored by the browser for reconnect. For a container deployment, review `compose.yaml`, then run `docker compose up --build`; the web entry point is port 8080. The example systemd unit and Tailscale/firewall notes are in `deploy/README.md`.
 
 In the build phase, the active player can use **Ruilen** to offer resource bundles to selected players. Recipients can accept, decline, or make one counter-offer; bots respond to offers directed to them. Bank and harbor trades remain immediate. Domestic-trade bundle, consent, and counter-offer details are project assumptions documented in `docs/DECISIONS.md`.
 

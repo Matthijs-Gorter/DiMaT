@@ -29,7 +29,7 @@ Shared footer for every prompt (already implied by AGENTS.md): follow the Defini
 
 ## Phase 2: Playable online (server + web)
 
-> Task: Phase 2. Build `apps/server`, `packages/protocol` and `apps/web` so two humans and bots can play the base game in the browser.
+> Task: Phase 2. Build `apps/server`, `packages/protocol` and `apps/web` so one to four humans and bots can play the base game in the browser (three or four total seats).
 > - Rooms with invite link, display name, secret seat token for reconnecting. No passwords.
 > - Server is authoritative: validate every action against `legalActions`; send each player only `viewFor` data; send events/diffs rather than full state each move.
 > - Persist `{ seed, settings, actions }` in SQLite; resume games after a server restart.
@@ -37,7 +37,7 @@ Shared footer for every prompt (already implied by AGENTS.md): follow the Defini
 > - Web UI: SVG hex board, highlights for legal placements, pip probability on hover, hand, build menu, trade panel (offer, counter-offer, ports), dice and production animations, event log, score panel, dark/light mode, responsive layout for phone and desktop, color-blind-safe resource icons.
 > - Deployment: `compose.yaml` for Podman/Docker, a systemd unit example, firewalld command, and Tailscale access instructions in `README.md`.
 >
-> Done when: a full game with 2 humans (two browsers) + 1 to 2 bots completes; a refresh or reconnect restores the seat; typecheck, lint, tests and sim are green.
+> Done when: games with solo humans, 2–4 human seats and bot-filled seats complete; a refresh or reconnect restores the seat; typecheck, lint, tests and sim are green.
 
 ## Phase 3: Map system
 

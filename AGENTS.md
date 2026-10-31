@@ -4,7 +4,7 @@ Instructions for coding agents (Codex) working in this repository. Keep this fil
 
 ## Project
 
-A modern, fast, browser-based settlers-style board game (Catan-like), self-hosted on Fedora Linux, played by two humans plus bots. Build order: base game, then Seafarers, then Cities & Knights, then combinations and multiple maps (colonist.io-style variety).
+A modern, fast, browser-based settlers-style board game (Catan-like), self-hosted on Fedora Linux, played by one to four humans and bots in three- or four-player base games. Build order: base game, then Seafarers, then Cities & Knights, then combinations and multiple maps (colonist.io-style variety).
 
 - Working name: `PROJECT_NAME` (placeholder). **Never** use the name "Catan" or official artwork in UI, package names or assets. Use original graphics.
 - The owner reads Dutch. **Reply to the user in Dutch. Write code, comments, identifiers, commit messages and docs in English.**

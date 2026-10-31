@@ -4,12 +4,35 @@ async function createTwoHumansAndBot(browser:Browser){
   const hostContext=await browser.newContext();const guestContext=await browser.newContext();
   const host=await hostContext.newPage();const guest=await guestContext.newPage();
   await host.route('**/api/rooms',async route=>{const body=route.request().postDataJSON() as Record<string,unknown>;await route.continue({postData:JSON.stringify({...body,seed:6})});});
-  await host.goto('/');await host.getByPlaceholder('Je naam').fill('Host');await host.getByRole('button',{name:'Nieuwe kamer (1 bot)'}).click();
+  await host.goto('/');await host.getByPlaceholder('Je naam').fill('Host');await host.getByRole('button',{name:'Nieuwe kamer'}).click();
   await expect(host).toHaveURL(/\/play\/[a-f0-9]+/);const invite=host.url();
   await guest.goto(invite);await guest.getByPlaceholder('Je naam').fill('Guest');await guest.getByRole('button',{name:'Deelnemen aan kamer'}).click();
   await expect(host.getByText('Guest')).toBeVisible();
   return {hostContext,guestContext,host,guest};
 }
+
+test('solo rooms can be created with the configured bot seats',async({browser})=>{
+  const host=await browser.newPage();
+  await host.goto('/');
+  await host.getByPlaceholder('Je naam').fill('Solo');
+  await expect(host.getByLabel('Aantal bots').locator('option')).toHaveCount(2);
+  await host.getByLabel('Aantal menselijke spelers').selectOption('3');
+  await expect(host.getByLabel('Aantal bots').locator('option')).toHaveCount(2);
+  await host.getByLabel('Aantal menselijke spelers').selectOption('4');
+  await expect(host.getByLabel('Aantal bots').locator('option')).toHaveCount(1);
+  await host.getByLabel('Aantal menselijke spelers').selectOption('1');
+  await expect(host.getByLabel('Aantal bots').locator('option')).toHaveCount(2);
+  await host.getByLabel('Aantal bots').selectOption('2');
+  await expect(host.getByText('1 menselijke speler en 2 bots · 3 spelers totaal (3–4)')).toBeVisible();
+  await host.getByRole('button',{name:'Nieuwe kamer'}).click();
+  await expect(host).toHaveURL(/\/play\/[a-f0-9]+/);
+  await expect(host.getByText('Bot 1 · bot')).toBeVisible();
+  await expect(host.getByText('Bot 2 · bot')).toBeVisible();
+  await expect(host.getByRole('button',{name:'Start spel'})).toBeEnabled();
+  await host.getByRole('button',{name:'Start spel'}).click();
+  await expect(host.locator('.gx-player')).toHaveCount(3);
+  await host.context().close();
+});
 
 async function clickBoardTarget(page:Page,selector:string){
   const target=page.locator(selector).first();await expect(target).toBeVisible();const bounds=await target.boundingBox();if(!bounds)throw new Error(`Board target is not visible: ${selector}`);

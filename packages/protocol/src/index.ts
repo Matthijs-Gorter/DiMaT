@@ -2,7 +2,15 @@ import { z } from 'zod';
 import { RESOURCES, type GameAction, type GameEvent, type PlayerView, type ReplayInput } from '@dimat/engine';
 
 const resourceSchema=z.enum(RESOURCES);
-export const createRoomSchema=z.object({displayName:z.string().trim().min(1).max(32),botCount:z.union([z.literal(1),z.literal(2)]).default(1),seed:z.number().int().optional()});
+export const createRoomSchema=z.object({
+  displayName:z.string().trim().min(1).max(32),
+  humanCount:z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4)]).default(2),
+  botCount:z.union([z.literal(0),z.literal(1),z.literal(2),z.literal(3)]).default(1),
+  seed:z.number().int().optional()
+}).refine(({humanCount,botCount})=>humanCount+botCount===3||humanCount+botCount===4,{
+  path:['botCount'],
+  message:'The room must contain three or four players in total.'
+});
 const partialResources=z.object({
   brick:z.number().int().nonnegative().optional(),
   lumber:z.number().int().nonnegative().optional(),

@@ -27,19 +27,21 @@ app.get('/health',async()=>({ok:true}));
 app.post('/api/rooms',async(req,reply)=>{
   const parsed=createRoomSchema.safeParse(req.body);
   if(!parsed.success)return reply.code(400).send({code:'INVALID_ROOM_OPTIONS',message:'Room settings are invalid.',details:parsed.error.flatten()});
-  const {displayName,botCount}=parsed.data;
+  const {displayName,humanCount,botCount}=parsed.data;
   const seed=parsed.data.seed??randomBytes(4).readUInt32LE();
   const id=randomUUID().slice(0,8);
-  const playerCount=(botCount+2) as 3|4;
+  const playerCount=humanCount+botCount;
+  if(playerCount!==3&&playerCount!==4)throw new Error('Room validation returned an unsupported player count.');
   const settings:GameSettings={playerCount,victoryTarget:10};
-  const seats:Seat[]=[
-    {playerId:'p0',displayName,token:token(),bot:false,level:0,lastSequence:-1},
-    {playerId:'p1',displayName:'',token:token(),bot:false,level:0,lastSequence:-1}
-  ];
-  for(let i=2;i<playerCount;i++)seats.push({playerId:`p${i}`,displayName:`Bot ${i-1}`,token:token(),bot:true,level:i===2?1:2,lastSequence:-1});
+  const seats:Seat[]=[];
+  for(let i=0;i<humanCount;i++)seats.push({playerId:`p${i}`,displayName:i===0?displayName:'',token:token(),bot:false,level:0,lastSequence:-1});
+  for(let i=0;i<botCount;i++){
+    const playerIndex=humanCount+i;
+    seats.push({playerId:`p${playerIndex}`,displayName:`Bot ${i+1}`,token:token(),bot:true,level:i===0?1:2,lastSequence:-1});
+  }
   const room:Room={id,state:createGame(seed,settings),settings,actions:[],recentEvents:[],seats,lifecycle:'lobby',seed};
   rooms.set(id,room);persist(room);
-  app.log.info({roomId:id,seatId:'p0',actionType:'createRoom',outcome:'accepted'},'room created');
+  app.log.info({roomId:id,seatId:'p0',actionType:'createRoom',humanCount,botCount,outcome:'accepted'},'room created');
   return {roomId:id,seatToken:seats[0]!.token,playerId:'p0',invite:`/play/${id}`};
 });
 app.get('/api/rooms/:id',async(req,reply)=>{
@@ -141,7 +143,7 @@ function reject(ws:WebSocket,error:unknown,room:Room|undefined,seat:Seat|undefin
 function startRoom(room:Room){
   if(room.lifecycle!=='lobby')throw new RoomError('GAME_ALREADY_STARTED','This game is already in progress.',{lifecycle:room.lifecycle});
   const humans=room.seats.filter(seat=>!seat.bot);
-  if(!humans.every(seat=>seat.displayName))throw new RoomError('WAITING_FOR_PLAYERS','Both human seats must join before starting.',{connectedHumanSeats:humans.filter(seat=>seat.displayName).length,requiredHumanSeats:humans.length});
+  if(!humans.every(seat=>seat.displayName))throw new RoomError('WAITING_FOR_PLAYERS','All human seats must join before starting.',{connectedHumanSeats:humans.filter(seat=>seat.displayName).length,requiredHumanSeats:humans.length});
   room.lifecycle='started';persist(room);broadcastRoom(room);
   for(const seat of room.seats)sendPrivateView(room,seat);
   app.log.info({roomId:room.id,outcome:'started',seed:room.seed,settings:room.settings},'game started');

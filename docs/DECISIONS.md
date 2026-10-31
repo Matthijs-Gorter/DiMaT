@@ -30,6 +30,10 @@
 - **Lifecycle policy:** Rooms require both human seats before the host starts. Bot seats never submit client messages. A resumed room is considered started when its persisted lifecycle says `started`; legacy rows with actions but no lifecycle are migrated as started.
 - **Bot recovery policy:** On worker timeout/error, take one deterministic random legal action from that bot's own view. If no legal action exists or the fallback fails, mark the bot stalled with a reason and log it instead of silently waiting.
 
+## 2026-10-31 — Human and bot room sizes
+
+- **ASSUMPTION — total seat limit:** Room setup selects one to four human seats and a bot count, but keeps the base engine's supported total at three or four players. Therefore a solo human needs two or three bots, two humans need one or two bots, three humans may choose zero or one bot, and four humans play without bots. Supporting two total players or four bots plus a human would require changing the base-game player-count rules and engine.
+
 ## 2026-10-29 — Phase 2.1 Part B: board geometry and direct placement
 
 - Preserve the established vertex and edge IDs while reprojecting coordinates to a regular pointy-top lattice. Room action logs store these IDs, so changing graph enumeration would break replays.
