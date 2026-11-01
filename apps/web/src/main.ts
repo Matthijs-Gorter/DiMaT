@@ -11,13 +11,13 @@ const SVG_NS='http://www.w3.org/2000/svg';
 const COLORS=['#37a9d2','#e16c59','#e2b941','#7b68c6'];
 const PIPS:Record<number,number>={2:1,3:2,4:3,5:4,6:5,8:5,9:4,10:3,11:2,12:1};
 const RESOURCE_ICON:Record<'brick'|'lumber'|'wool'|'grain'|'ore',string>={brick:'▦',lumber:'♣',wool:'❖',grain:'✳',ore:'⬡'};
-const TILE_ASSETS:Record<Resource|'desert',string>={
-  brick:'brick.png',
-  lumber:'hout.png',
-  wool:'schaap.png',
-  grain:'graan.png',
-  ore:'erts.png',
-  desert:'woestijn.png'
+const TILE_ASSETS:Record<Resource|'desert',string[]>={
+  brick:['spring-brick-01_7f42d4a906254196fa6f41d553030cdc_6e73f772.jpg','spring-brick-02_e5ce19e97b99d980ca3aafd2d5c0730a_bb218207.jpg','spring-brick-03_7175978f6e01bdf367f95737c6f4587c_d21667d6.jpg'],
+  lumber:['spring-wood-01_da70459324efafa075f57045d15e831c_acf197dc.jpg','spring-wood-02_157210c998d7e5a671c1f2d43d2d2ebd_ba2adf57.jpg','spring-wood-03_a270ef19fa914034a5b6ef6f71c02017_4a1a2831.jpg','spring-wood-04_f559f2dcc6134f88844f9920692b6692_17e75d5e.jpg'],
+  wool:['spring-sheep-01_fad9eca90c3bf1526027354ee0cb8a55_0afd8192.jpg','spring-sheep-02_04d320c15697346f2ed3af10e1545279_caeb47ab.jpg','spring-sheep-03_a206fac53074f07b0d77f77254c29737_014ea4b6.jpg','spring-sheep-04_8e080c2d31dc2585fe53c024389504e9_51ffc1ad.jpg'],
+  grain:['spring-wheat-01_2fb098a05ecb3522bdf3c4fdb82b7bad_8f4bdb11.jpg','spring-wheat-02_6cfca0ad0fb6b80082925cae42eb5c50_a2461162.jpg','spring-wheat-03_f92e7f66418340e929d811e72446554e_abe2fcc4.jpg','spring-wheat-04_e34ad9514ce47551ad80b4c61d248677_7f9e4913.jpg'],
+  ore:['spring-ore-01_26a8de8163f7bae9e767b03cdd03dad8_d63df9cf.jpg','spring-ore-02_f4feb28ae3778c59e7138c8bf2b3af14_c0680aff.jpg','spring-ore-03_30a295cbe17e5a05c0192eb8e7483e22_1a2fdc83.jpg'],
+  desert:['spring-desert_5a7254fc93af2f57547cf44d1174e95d_47e24ba1.jpg']
 };
 const HARBOR_MARKER_SIZE=.9;
 const HARBOR_OFFSET=1.1;
@@ -236,10 +236,15 @@ function sendAction(action:GameAction,targetKey?:string){
 function createLine(parent:SVGElement,a:readonly[number,number],b:readonly[number,number],className:string){
   const line=svgElement('line');line.setAttribute('x1',String(a[0]));line.setAttribute('y1',String(a[1]));line.setAttribute('x2',String(b[0]));line.setAttribute('y2',String(b[1]));line.setAttribute('class',className);parent.append(line);return line;
 }
-function pointForVertex(v:PlayerView,id:number):[number,number]{const vertex=v.board.vertices[id]!;return [vertex.x*Math.sqrt(3),vertex.y];}
-function tileCenter(q:number,r:number):[number,number]{return [(2*q+r)*Math.sqrt(3),3*r];}
+function rotateBoardPoint(x:number,y:number):[number,number]{const angle=Math.PI/6;return [x*Math.cos(angle)-y*Math.sin(angle),x*Math.sin(angle)+y*Math.cos(angle)];}
+function pointForVertex(v:PlayerView,id:number):[number,number]{const vertex=v.board.vertices[id]!;return rotateBoardPoint(vertex.x*Math.sqrt(3),vertex.y);}
+function tileCenter(q:number,r:number):[number,number]{return rotateBoardPoint((2*q+r)*Math.sqrt(3),3*r);}
 function pointList(v:PlayerView,ids:number[]){return ids.map(id=>pointForVertex(v,id));}
-function terrainAsset(kind:Resource|'desert'):string{return TILE_ASSETS[kind];}
+function terrainAsset(kind:Resource|'desert',seed:number,tileId:number):string{
+  let hash=(seed^Math.imul(tileId+1,0x9e3779b1))>>>0;
+  hash=Math.imul(hash^(hash>>>16),0x7feb352d);hash=Math.imul(hash^(hash>>>15),0x846ca68b);hash^=hash>>>16;
+  const variants=TILE_ASSETS[kind];return variants[(hash>>>0)%variants.length]!;
+}
 function harborPositions(v:PlayerView){
   const harbors=new Map<number,{vertices:number[];kind:string;ratio:number}>();
   for(const vertex of v.board.vertices)if(vertex.harbor){const harbor=harbors.get(vertex.harbor.id)??{vertices:[],kind:vertex.harbor.kind,ratio:vertex.harbor.ratio};harbor.vertices.push(vertex.id);harbors.set(vertex.harbor.id,harbor);}
@@ -259,7 +264,7 @@ function harborPositions(v:PlayerView){
 function boardViewBox(v:PlayerView):[number,number,number,number]{
   const points=v.board.vertices.map(vertex=>pointForVertex(v,vertex.id));
   for(const harbor of harborPositions(v))points.push([harbor.center[0]-HARBOR_MARKER_SIZE/2,harbor.center[1]-HARBOR_MARKER_SIZE/2],[harbor.center[0]+HARBOR_MARKER_SIZE/2,harbor.center[1]+HARBOR_MARKER_SIZE/2]);
-  const padding=.8,xs=points.map(point=>point[0]),ys=points.map(point=>point[1]),left=Math.min(...xs)-padding,top=Math.min(...ys)-padding,right=Math.max(...xs)+padding,bottom=Math.max(...ys)+padding;
+  const padding=.8,topPadding=1.1,bottomPadding=2.3,xs=points.map(point=>point[0]),ys=points.map(point=>point[1]),left=Math.min(...xs)-padding,top=Math.min(...ys)-topPadding,right=Math.max(...xs)+padding,bottom=Math.max(...ys)+bottomPadding;
   return [left,top,right-left,bottom-top];
 }
 function activePlacementMode(v:PlayerView):PlacementMode{
@@ -271,7 +276,7 @@ function drawTerrainIcon(group:SVGElement,kind:string,x:number,y:number){
 }
 function drawBoard(host:HTMLElement,v:PlayerView){
   const initialViewBox=boardViewBox(v);const svg=svgElement('svg') as SVGSVGElement;svg.setAttribute('viewBox',initialViewBox.join(' '));svg.setAttribute('preserveAspectRatio','xMidYMid meet');svg.setAttribute('role','img');svg.setAttribute('aria-label','Game board');svg.classList.add('board');
-  const mode=activePlacementMode(v);const terrainLayer=svgElement('g'),tileLayer=svgElement('g'),roadLayer=svgElement('g'),harborLayer=svgElement('g'),pieceLayer=svgElement('g'),targetLayer=svgElement('g'),previewLayer=svgElement('g');
+  const defs=svgElement('defs'),mode=activePlacementMode(v);const terrainLayer=svgElement('g'),tileLayer=svgElement('g'),roadLayer=svgElement('g'),harborLayer=svgElement('g'),pieceLayer=svgElement('g'),targetLayer=svgElement('g'),previewLayer=svgElement('g');
   terrainLayer.setAttribute('class','terrain-layer');tileLayer.setAttribute('class','tile-layer');roadLayer.setAttribute('class','road-layer');harborLayer.setAttribute('class','harbor-layer');pieceLayer.setAttribute('class','piece-layer');targetLayer.setAttribute('class','target-layer');previewLayer.setAttribute('class','preview-layer');
   const vertexTargets=new Map<number,GameAction>();
   if(mode==='settlement')for(const action of v.legalActions)if(action.type==='placeSettlement'||action.type==='buildSettlement')vertexTargets.set(action.vertex,action);
@@ -281,9 +286,13 @@ function drawBoard(host:HTMLElement,v:PlayerView){
   const tileTargets=new Map<number,GameAction[]>();
   if(mode==='robber')for(const action of v.legalActions)if(action.type==='moveRobber'||action.type==='playKnight'){const tile='tile'in action?action.tile:-1;const list=tileTargets.get(tile)??[];list.push(action);tileTargets.set(tile,list);}
 
+  const terrainTiles:{group:SVGElement;x:number;y:number}[]=[];
   for(const tile of v.board.tiles){
-    const rolled=v.lastRoll?v.lastRoll[0]+v.lastRoll[1]:null;const produces=tile.number!==null&&tile.number===rolled;const polygon=svgElement('polygon'),points=pointList(v,tile.vertices),[x,y]=tileCenter(tile.q,tile.r);
-    const art=svgElement('image');art.setAttribute('href',`/tiles/${terrainAsset(tile.kind)}`);art.setAttribute('x',String(x-Math.sqrt(3)));art.setAttribute('y',String(y-2));art.setAttribute('width',String(2*Math.sqrt(3)));art.setAttribute('height','4');art.setAttribute('preserveAspectRatio','none');art.setAttribute('class',`terrain-art${produces?' producing':''}`);art.setAttribute('pointer-events','none');art.dataset.kind=tile.kind;art.dataset.tile=String(tile.id);terrainLayer.append(art);
+    const rolled=v.lastRoll?v.lastRoll[0]+v.lastRoll[1]:null;const produces=tile.number!==null&&tile.number===rolled;const polygon=svgElement('polygon'),points=pointList(v,tile.vertices),[x,y]=tileCenter(tile.q,tile.r),clip=svgElement('clipPath');clip.id=`tile-art-clip-${tile.id}`;clip.setAttribute('clipPathUnits','userSpaceOnUse');const clipShape=svgElement('polygon');clipShape.setAttribute('points',points.map(p=>p.join(',')).join(' '));clip.append(clipShape);defs.append(clip);
+    const terrainTile=svgElement('g');terrainTile.setAttribute('class','terrain-tile');terrainTile.dataset.tile=String(tile.id);
+    const base=svgElement('polygon');base.setAttribute('points',points.map(p=>p.join(',')).join(' '));base.setAttribute('class','terrain-base');base.setAttribute('pointer-events','none');
+    const art=svgElement('image');art.setAttribute('href',`/old_tiles2/${terrainAsset(tile.kind,v.seed,tile.id)}`);art.setAttribute('x',String(x-2));art.setAttribute('y',String(y-Math.sqrt(3)));art.setAttribute('width','4');art.setAttribute('height',String(2*Math.sqrt(3)));art.setAttribute('preserveAspectRatio','none');art.setAttribute('clip-path',`url(#${clip.id})`);art.setAttribute('class',`terrain-art${produces?' producing':''}`);art.setAttribute('pointer-events','none');art.dataset.kind=tile.kind;art.dataset.tile=String(tile.id);
+    terrainTile.append(base,art);terrainTiles.push({group:terrainTile,x,y});
     polygon.setAttribute('points',points.map(p=>p.join(',')).join(' '));polygon.setAttribute('class',`hex terrain-${tile.kind}${tile.id===v.robberTile?' robber-tile':''}${produces?' producing':''}`);polygon.dataset.tile=String(tile.id);
     const title=svgElement('title');title.textContent=tile.number?`${tile.kind}: ${tile.number}, ${PIPS[tile.number]} pip(s)`:`${tile.kind}`;polygon.append(title);tileLayer.append(polygon);
     drawTerrainIcon(tileLayer,tile.kind,x,y+.58);
@@ -295,6 +304,8 @@ function drawBoard(host:HTMLElement,v:PlayerView){
     if(tile.id===v.robberTile){const pawn=svgElement('g');pawn.setAttribute('class','robber-pawn');pawn.setAttribute('transform',`translate(${x-.78},${y-.38})`);const head=svgElement('circle');head.setAttribute('cx','0');head.setAttribute('cy','-.2');head.setAttribute('r','.18');const body=svgElement('path');body.setAttribute('d','M-.29 .26 Q-.24 -.08 0 -.08 Q.24 -.08 .29 .26 Z');pawn.append(head,body);tileLayer.append(pawn);}
     const actions=tileTargets.get(tile.id);if(actions?.length){const hit=svgElement('polygon');hit.setAttribute('points',points.map(p=>p.join(',')).join(' '));hit.setAttribute('class',`board-target legal-tile${pending?.targetKey===`tile-${tile.id}`?' pending':''}`);hit.dataset.targetKey=`tile-${tile.id}`;hit.dataset.victimCount=String(new Set(actions.flatMap(action=>action.type==='moveRobber'||action.type==='playKnight'?action.victimId?[action.victimId]:[]:[])).size);hit.addEventListener('click',()=>chooseRobberAction(actions,tile.id));targetLayer.append(hit);}
   }
+  // Painter's order: top rows first so lower tiles cover the front wall of the tiles behind them.
+  terrainTiles.sort((a,b)=>a.y-b.y||a.x-b.x);for(const entry of terrainTiles)terrainLayer.append(entry.group);
   for(const edge of v.board.edges){
     const [a,b]=edge.vertices.map(id=>pointForVertex(v,id)) as [[number,number],[number,number]];
     const road=v.roads[edge.id];if(road){const piece=createLine(roadLayer,a,b,`road-piece player-${road.owner}`);piece.setAttribute('stroke-width','.2');}
@@ -310,7 +321,7 @@ function drawBoard(host:HTMLElement,v:PlayerView){
     if(building){const group=svgElement('g');group.setAttribute('class',`building-piece player-${building.owner}`);group.setAttribute('transform',`translate(${x},${y})`);if(building.kind==='settlement'){const house=svgElement('path');house.setAttribute('d','M-.48 .02 L0 -.5 L.48 .02 V.47 H-.48 Z');group.append(house);}else{const house=svgElement('path');house.setAttribute('d','M-.55 -.25 L-.22 -.55 L.12 -.25 L.4 -.48 L.55 -.28 V.48 H-.55 Z');group.append(house);const door=svgElement('rect');door.setAttribute('x','-.12');door.setAttribute('y','.12');door.setAttribute('width','.24');door.setAttribute('height','.36');door.setAttribute('class','building-door');group.append(door);}pieceLayer.append(group);}
     const action=vertexTargets.get(vertex.id);if(action){const glow=svgElement('circle');glow.setAttribute('cx',String(x));glow.setAttribute('cy',String(y));glow.setAttribute('r','.43');glow.setAttribute('class',`legal-vertex-glow${pending?.targetKey===`vertex-${vertex.id}`?' pending':''}`);targetLayer.append(glow);const hit=svgElement('circle');hit.setAttribute('cx',String(x));hit.setAttribute('cy',String(y));hit.setAttribute('r','1.05');hit.setAttribute('fill','transparent');hit.setAttribute('pointer-events','all');hit.setAttribute('class',`board-target spot legal legal-vertex${pending?.targetKey===`vertex-${vertex.id}`?' pending':''}`);hit.dataset.targetKey=`vertex-${vertex.id}`;hit.addEventListener('click',()=>sendAction(action,`vertex-${vertex.id}`));hit.addEventListener('pointerenter',()=>showPiecePreview(previewLayer,action.type==='buildCity'?'city':'settlement',[x,y],playerColor(playerId)));hit.addEventListener('pointerleave',()=>previewLayer.replaceChildren());targetLayer.append(hit);}
   }
-  svg.append(terrainLayer,tileLayer,roadLayer,harborLayer,pieceLayer,targetLayer,previewLayer);let box=[...initialViewBox],drag:{x:number;y:number;box:number[];moved:boolean}|null=null;const pointers=new Map<number,{x:number;y:number}>();let pinchStart:{distance:number;box:number[]}|null=null;
+  svg.append(defs,terrainLayer,tileLayer,roadLayer,harborLayer,pieceLayer,targetLayer,previewLayer);let box=[...initialViewBox],drag:{x:number;y:number;box:number[];moved:boolean}|null=null;const pointers=new Map<number,{x:number;y:number}>();let pinchStart:{distance:number;box:number[]}|null=null;
   const controls=element('div','board-controls'),zoomOut=element('button','','−'),zoomLabel=element('span','muted','100%'),zoomIn=element('button','','+'),center=element('button','','Hercentreer');zoomOut.setAttribute('aria-label','Uitzoomen');zoomIn.setAttribute('aria-label','Inzoomen');
   const constrainViewBox=(next:number[])=>{
     const [baseX,baseY,baseWidth,baseHeight]=initialViewBox,[width,height]=next.slice(2);

@@ -165,8 +165,8 @@ test('setup roads have direct legal edge hit targets on the board',async({browse
     return {clipPath:image.getAttribute('clip-path'),x:Number(image.getAttribute('x')),y:Number(image.getAttribute('y')),width:Number(image.getAttribute('width')),height:Number(image.getAttribute('height')),bounds:bounds?{x:bounds.x,y:bounds.y,width:bounds.width,height:bounds.height}:null};
   }));
   expect(tileGeometry).toHaveLength(19);
-  await expect(host.locator('.board clipPath')).toHaveCount(0);
-  for(const geometry of tileGeometry){expect(geometry.clipPath).toBeNull();expect(geometry.width).toBeCloseTo(2*Math.sqrt(3),5);expect(geometry.height).toBe(4);expect(geometry.bounds?.x).toBeCloseTo(geometry.x,5);expect(geometry.bounds?.y).toBeCloseTo(geometry.y,5);expect(geometry.bounds?.width).toBeCloseTo(2*Math.sqrt(3),5);expect(geometry.bounds?.height).toBe(4);}
+  await expect(host.locator('.board clipPath')).toHaveCount(19);
+  for(const geometry of tileGeometry){expect(geometry.clipPath).not.toBeNull();expect(geometry.width).toBe(4);expect(geometry.height).toBeCloseTo(2*Math.sqrt(3),5);expect(geometry.bounds?.x).toBeCloseTo(geometry.x,5);expect(geometry.bounds?.y).toBeCloseTo(geometry.y,5);expect(geometry.bounds?.width).toBeCloseTo(4,5);expect(geometry.bounds?.height).toBeCloseTo(2*Math.sqrt(3),5);}
   const tileStyle=await host.locator('.hex').first().evaluate(tile=>({gap:getComputedStyle(tile).strokeWidth,label:getComputedStyle(tile.ownerDocument.querySelector('.number-label')!).fontSize}));
   expect(tileStyle.gap).toBe('5px');
   expect(Number.parseFloat(tileStyle.label)).toBeCloseTo(.34,5);
@@ -182,8 +182,8 @@ test('setup roads have direct legal edge hit targets on the board',async({browse
   const legalVertices=await host.locator('.spot.legal').evaluateAll(spots=>spots.map(spot=>{const circle=spot as SVGCircleElement;return [circle.cx.baseVal.value,circle.cy.baseVal.value];}));
   for(const harbor of harborGeometry){expect(harbor.edge).not.toBeNull();expect(harbor.connectors).toHaveLength(2);expect(harbor.radius).toBeCloseTo(.45,5);const endpoints=new Set<string>();for(const connector of harbor.connectors){expect(connector.vertex).not.toBeNull();expect(legalVertices.some(([vertexX,vertexY])=>Math.abs(vertexX!-connector.start[0]!)<1e-4&&Math.abs(vertexY!-connector.start[1]!)<1e-4)).toBe(true);expect(Math.abs(Math.hypot(connector.endpoint[0]!-harbor.center[0]!,connector.endpoint[1]!-harbor.center[1]!)-harbor.radius)).toBeLessThan(1e-4);endpoints.add(connector.endpoint.join(','));}expect(endpoints.size).toBe(2);}
   const tileImages=await host.locator('.terrain-art').evaluateAll(images=>images.map(image=>({kind:image.getAttribute('data-kind'),path:image.getAttribute('href')})));
-  const tileAssets:Record<string,string>={brick:'brick.png',lumber:'hout.png',wool:'schaap.png',grain:'graan.png',ore:'erts.png',desert:'woestijn.png'};
-  for(const image of tileImages){expect(image.path).toBe(`/tiles/${tileAssets[image.kind??'']}`);}
+  const tileAssetPrefixes:Record<string,string>={brick:'spring-brick-',lumber:'spring-wood-',wool:'spring-sheep-',grain:'spring-wheat-',ore:'spring-ore-',desert:'spring-desert_'};
+  for(const image of tileImages){expect(image.path).toMatch(new RegExp(`^/old_tiles2/${tileAssetPrefixes[image.kind??'']}.*\\.jpg$`));}
   const assetResponses=await host.evaluate(async paths=>Promise.all([...new Set(paths)].map(async path=>(await fetch(path)).ok)),tileImages.map(image=>image.path!));
   expect(assetResponses.every(Boolean)).toBe(true);
   await expect(host.locator('.spot.legal')).toHaveCount(54,{timeout:5000});
