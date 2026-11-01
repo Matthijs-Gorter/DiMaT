@@ -19,6 +19,24 @@ const TILE_ASSETS:Record<Resource|'desert',string[]>={
   ore:['spring-ore-01_26a8de8163f7bae9e767b03cdd03dad8_d63df9cf.jpg','spring-ore-02_f4feb28ae3778c59e7138c8bf2b3af14_c0680aff.jpg','spring-ore-03_30a295cbe17e5a05c0192eb8e7483e22_1a2fdc83.jpg'],
   desert:['spring-desert_5a7254fc93af2f57547cf44d1174e95d_47e24ba1.jpg']
 };
+// Opaque-pixel bounds of every source PNG (measured, the files themselves stay untouched).
+// Each asset is a hex slab with a visible front wall. It is always scaled uniformly from these bounds, never stretched.
+const TILE_ART:Record<string,{size:number;x:number;y:number;width:number;height:number}>={
+  'brick.png':{size:500,x:25,y:12,width:450,height:480},
+  'hout.png':{size:1254,x:64,y:38,width:1124,height:1184},
+  'schaap.png':{size:500,x:27,y:12,width:448,height:480},
+  'graan.png':{size:500,x:27,y:31,width:447,height:453},
+  'erts.png':{size:500,x:26,y:15,width:448,height:471},
+  'woestijn.png':{size:500,x:27,y:10,width:447,height:481}
+};
+const HEX_PITCH=2*Math.sqrt(3);
+const TILE_ART_FIT=1.07;
+const TILE_ART_DROP=.16;
+function terrainArtBox(kind:Resource|'desert',cx:number,cy:number){
+  const asset=terrainAsset(kind),art=TILE_ART[asset];if(!art)throw new Error(`Missing tile art metrics for ${asset}`);
+  const scale=HEX_PITCH*TILE_ART_FIT/art.width,size=art.size*scale;
+  return {x:cx-(art.x+art.width/2)*scale,y:cy+TILE_ART_DROP-(art.y+art.height/2)*scale,width:size,height:size};
+}
 const HARBOR_MARKER_SIZE=.9;
 const HARBOR_OFFSET=1.1;
 const root=document.querySelector<HTMLDivElement>('#app')!;
@@ -288,10 +306,17 @@ function drawBoard(host:HTMLElement,v:PlayerView){
 
   const terrainTiles:{group:SVGElement;x:number;y:number}[]=[];
   for(const tile of v.board.tiles){
+<<<<<<< HEAD
     const rolled=v.lastRoll?v.lastRoll[0]+v.lastRoll[1]:null;const produces=tile.number!==null&&tile.number===rolled;const polygon=svgElement('polygon'),points=pointList(v,tile.vertices),[x,y]=tileCenter(tile.q,tile.r),clip=svgElement('clipPath');clip.id=`tile-art-clip-${tile.id}`;clip.setAttribute('clipPathUnits','userSpaceOnUse');const clipShape=svgElement('polygon');clipShape.setAttribute('points',points.map(p=>p.join(',')).join(' '));clip.append(clipShape);defs.append(clip);
     const terrainTile=svgElement('g');terrainTile.setAttribute('class','terrain-tile');terrainTile.dataset.tile=String(tile.id);
     const base=svgElement('polygon');base.setAttribute('points',points.map(p=>p.join(',')).join(' '));base.setAttribute('class','terrain-base');base.setAttribute('pointer-events','none');
     const art=svgElement('image');art.setAttribute('href',`/old_tiles2/${terrainAsset(tile.kind,v.seed,tile.id)}`);art.setAttribute('x',String(x-2));art.setAttribute('y',String(y-Math.sqrt(3)));art.setAttribute('width','4');art.setAttribute('height',String(2*Math.sqrt(3)));art.setAttribute('preserveAspectRatio','none');art.setAttribute('clip-path',`url(#${clip.id})`);art.setAttribute('class',`terrain-art${produces?' producing':''}`);art.setAttribute('pointer-events','none');art.dataset.kind=tile.kind;art.dataset.tile=String(tile.id);
+=======
+    const rolled=v.lastRoll?v.lastRoll[0]+v.lastRoll[1]:null;const produces=tile.number!==null&&tile.number===rolled;const polygon=svgElement('polygon'),points=pointList(v,tile.vertices),[x,y]=tileCenter(tile.q,tile.r);
+    const box=terrainArtBox(tile.kind,x,y),terrainTile=svgElement('g');terrainTile.setAttribute('class','terrain-tile');terrainTile.dataset.tile=String(tile.id);
+    const base=svgElement('polygon');base.setAttribute('points',points.map(p=>p.join(',')).join(' '));base.setAttribute('class','terrain-base');base.setAttribute('pointer-events','none');
+    const art=svgElement('image');art.setAttribute('href',`/tiles/${terrainAsset(tile.kind)}`);art.setAttribute('x',String(box.x));art.setAttribute('y',String(box.y));art.setAttribute('width',String(box.width));art.setAttribute('height',String(box.height));art.setAttribute('preserveAspectRatio','xMidYMid meet');art.setAttribute('class',`terrain-art${produces?' producing':''}`);art.setAttribute('pointer-events','none');art.dataset.kind=tile.kind;art.dataset.tile=String(tile.id);
+>>>>>>> refs/remotes/origin/main
     terrainTile.append(base,art);terrainTiles.push({group:terrainTile,x,y});
     polygon.setAttribute('points',points.map(p=>p.join(',')).join(' '));polygon.setAttribute('class',`hex terrain-${tile.kind}${tile.id===v.robberTile?' robber-tile':''}${produces?' producing':''}`);polygon.dataset.tile=String(tile.id);
     const title=svgElement('title');title.textContent=tile.number?`${tile.kind}: ${tile.number}, ${PIPS[tile.number]} pip(s)`:`${tile.kind}`;polygon.append(title);tileLayer.append(polygon);

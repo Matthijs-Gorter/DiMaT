@@ -160,15 +160,22 @@ test('setup roads have direct legal edge hit targets on the board',async({browse
   await host.setViewportSize({width:1024,height:768});
   await host.getByRole('button',{name:'Start spel'}).click();
   await expect(host.locator('.terrain-art')).toHaveCount(19);
-  const tileGeometry=await host.locator('.terrain-art').evaluateAll(images=>images.map(image=>{
-    const tile=image.getAttribute('data-tile')!,polygon=image.ownerDocument.querySelector<SVGPolygonElement>(`.hex[data-tile="${tile}"]`),bounds=polygon?.getBBox();
-    return {clipPath:image.getAttribute('clip-path'),x:Number(image.getAttribute('x')),y:Number(image.getAttribute('y')),width:Number(image.getAttribute('width')),height:Number(image.getAttribute('height')),bounds:bounds?{x:bounds.x,y:bounds.y,width:bounds.width,height:bounds.height}:null};
-  }));
+  const tileGeometry=await host.locator('.terrain-art').evaluateAll(async images=>Promise.all(images.map(async image=>{
+    const bitmap=await createImageBitmap(await (await fetch(image.getAttribute('href')!)).blob());
+    return {clipPath:image.getAttribute('clip-path'),preserve:image.getAttribute('preserveAspectRatio'),width:Number(image.getAttribute('width')),height:Number(image.getAttribute('height')),natural:bitmap.width/bitmap.height};
+  })));
   expect(tileGeometry).toHaveLength(19);
+<<<<<<< HEAD
   await expect(host.locator('.board clipPath')).toHaveCount(19);
   for(const geometry of tileGeometry){expect(geometry.clipPath).not.toBeNull();expect(geometry.width).toBe(4);expect(geometry.height).toBeCloseTo(2*Math.sqrt(3),5);expect(geometry.bounds?.x).toBeCloseTo(geometry.x,5);expect(geometry.bounds?.y).toBeCloseTo(geometry.y,5);expect(geometry.bounds?.width).toBeCloseTo(4,5);expect(geometry.bounds?.height).toBeCloseTo(2*Math.sqrt(3),5);}
   const tileStyle=await host.locator('.hex').first().evaluate(tile=>({gap:getComputedStyle(tile).strokeWidth,label:getComputedStyle(tile.ownerDocument.querySelector('.number-label')!).fontSize}));
   expect(tileStyle.gap).toBe('5px');
+=======
+  await expect(host.locator('.board clipPath')).toHaveCount(0);
+  for(const geometry of tileGeometry){expect(geometry.clipPath).toBeNull();expect(geometry.preserve).toBe('xMidYMid meet');expect(geometry.width/geometry.height).toBeCloseTo(geometry.natural,5);}
+  const tileStyle=await host.locator('.hex').first().evaluate(tile=>({stroke:getComputedStyle(tile).stroke,label:getComputedStyle(tile.ownerDocument.querySelector('.number-label')!).fontSize}));
+  expect(tileStyle.stroke).toBe('none');
+>>>>>>> refs/remotes/origin/main
   expect(Number.parseFloat(tileStyle.label)).toBeCloseTo(.34,5);
   await expect(host.locator('.number-token').first()).toHaveAttribute('r','.6');
   await expect(host.locator('.beach-rim')).toHaveCount(0);
