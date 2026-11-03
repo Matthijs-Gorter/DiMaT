@@ -16,7 +16,8 @@ type SeatSummary={playerId:string;displayName:string;bot:boolean};
 type PlacementMode='road'|'settlement'|'city'|'robber'|null;
 type PendingAction={sequence:number;targetKey?:string};
 const SVG_NS='http://www.w3.org/2000/svg';
-const COLORS=['#37a9d2','#e16c59','#e2b941','#7b68c6'];
+const themeColor=(name:string)=>getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const COLORS=['--dimat-player-0','--dimat-player-1','--dimat-player-2','--dimat-player-3'].map(themeColor);
 const PIPS:Record<number,number>={2:1,3:2,4:3,5:4,6:5,8:5,9:4,10:3,11:2,12:1};
 const RESOURCE_ICON:Record<'brick'|'lumber'|'wool'|'grain'|'ore',string>={brick:'▦',lumber:'♣',wool:'❖',grain:'✳',ore:'⬡'};
 const ROAD_STROKE='.2';
@@ -187,7 +188,7 @@ function showMapPreview(host:HTMLElement,map:MapDefinition){
   }
   for(const river of map.rivers){
     const a=point(river.tile.q,river.tile.r,river.side),b=point(river.tile.q,river.tile.r,(river.side+1)%6),line=svgElement('line');
-    line.setAttribute('x1',String(a[0]));line.setAttribute('y1',String(a[1]));line.setAttribute('x2',String(b[0]));line.setAttribute('y2',String(b[1]));line.setAttribute('stroke','#b7edff');line.setAttribute('stroke-width','.18');line.setAttribute('stroke-linecap','round');svg.append(line);
+    line.setAttribute('x1',String(a[0]));line.setAttribute('y1',String(a[1]));line.setAttribute('x2',String(b[0]));line.setAttribute('y2',String(b[1]));line.setAttribute('stroke',themeColor('--dimat-river'));line.setAttribute('stroke-width','.18');line.setAttribute('stroke-linecap','round');svg.append(line);
   }
   for(const harbor of map.harbors){const [x,y]=mapHarborCenter(harbor.tile.q,harbor.tile.r,harbor.side),marker=svgElement('g');marker.setAttribute('class','map-preview-harbor');const circle=svgElement('circle');circle.setAttribute('cx',String(x));circle.setAttribute('cy',String(y));circle.setAttribute('r','.3');circle.setAttribute('class','map-harbor-marker');const label=svgElement('text');label.setAttribute('x',String(x));label.setAttribute('y',String(y+.1));label.setAttribute('text-anchor','middle');label.textContent=harbor.kind==='generic'?'3:1':`2:1 ${harbor.kind[0]?.toUpperCase()??''}`;marker.append(circle,label);svg.append(marker);}
   host.replaceChildren(svg);
@@ -376,7 +377,7 @@ function drawBoard(host:HTMLElement,v:PlayerView){
     const [a,b]=edge.vertices.map(id=>pointForVertex(v,id)) as [[number,number],[number,number]];
     if(edge.kind==='river'){const water=createLine(roadLayer,a,b,'river-edge');water.setAttribute('stroke-width','.1');}
     const road=v.roads[edge.id];if(road){const piece=createLine(roadLayer,a,b,`road-piece player-${road.owner}${edge.kind==='river'?' bridge-piece':''}`);piece.setAttribute('stroke-width',ROAD_STROKE);}
-    const action=edgeTargets.get(edge.id);if(action){const highlight=createLine(targetLayer,a,b,'legal-road-highlight');highlight.setAttribute('stroke','#a5ffc2');highlight.setAttribute('stroke-width','.2');highlight.setAttribute('stroke-dasharray','.1 .09');highlight.setAttribute('pointer-events','none');const dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy),halfWidth=.36,nx=-dy/length*halfWidth,ny=dx/length*halfWidth;const hit=svgElement('polygon');hit.setAttribute('points',[[a[0]+nx,a[1]+ny],[b[0]+nx,b[1]+ny],[b[0]-nx,b[1]-ny],[a[0]-nx,a[1]-ny]].map(point=>point.join(',')).join(' '));hit.setAttribute('class',`board-target road-edge legal${pending?.targetKey===`edge-${edge.id}`?' pending':''}`);hit.setAttribute('fill','#fff');hit.setAttribute('fill-opacity','.001');hit.setAttribute('pointer-events','all');hit.dataset.targetKey=`edge-${edge.id}`;targetLayer.append(hit);
+    const action=edgeTargets.get(edge.id);if(action){const highlight=createLine(targetLayer,a,b,'legal-road-highlight');highlight.setAttribute('stroke',themeColor('--dimat-legal-highlight'));highlight.setAttribute('stroke-width','.2');highlight.setAttribute('stroke-dasharray','.1 .09');highlight.setAttribute('pointer-events','none');const dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy),halfWidth=.36,nx=-dy/length*halfWidth,ny=dx/length*halfWidth;const hit=svgElement('polygon');hit.setAttribute('points',[[a[0]+nx,a[1]+ny],[b[0]+nx,b[1]+ny],[b[0]-nx,b[1]-ny],[a[0]-nx,a[1]-ny]].map(point=>point.join(',')).join(' '));hit.setAttribute('class',`board-target road-edge legal${pending?.targetKey===`edge-${edge.id}`?' pending':''}`);hit.setAttribute('fill',themeColor('--dimat-hit-area'));hit.setAttribute('fill-opacity','.001');hit.setAttribute('pointer-events','all');hit.dataset.targetKey=`edge-${edge.id}`;targetLayer.append(hit);
       hit.addEventListener('click',()=>sendAction(action,`edge-${edge.id}`));hit.addEventListener('pointerenter',()=>showPiecePreview(previewLayer,'road',[(a[0]+b[0])/2,(a[1]+b[1])/2],playerColor(playerId),[a,b]));hit.addEventListener('pointerleave',()=>previewLayer.replaceChildren());}
   }
   for(const harbor of harborPositions(v)){
