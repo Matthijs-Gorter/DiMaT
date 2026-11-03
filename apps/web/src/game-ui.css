@@ -668,3 +668,52 @@ html[data-theme="light"] .trade-modal {
   .gx-build-hint { white-space: normal; }
   .development-hand { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 10rem; }
 }
+
+/* Unified build interaction and permanent development-card panel */
+.gx-build-toggle {
+  min-width: 8.5rem;
+  min-height: 2.9rem;
+  border-color: var(--gx-gold);
+  color: var(--gx-gold);
+  font-weight: 700;
+  letter-spacing: .025em;
+}
+.gx-build-toggle.selected {
+  background: var(--gx-gold-soft);
+  box-shadow: 0 0 0 1px var(--gx-gold), 0 0 18px color-mix(in srgb, var(--gx-gold) 22%, transparent);
+}
+.gx-build-hint { color: var(--gx-dim); font-size: .78rem; white-space: nowrap; }
+.gx-build-cancel { min-height: 2.6rem; }
+.gx-award-badge {
+  display: inline-flex; align-items: center; gap: .25rem;
+  margin: .25rem 0 0 .35rem; padding: .2rem .45rem;
+  border: 1px solid var(--gx-gold); border-radius: 999px;
+  color: var(--gx-gold); background: var(--gx-gold-soft);
+  font-size: .7rem; font-weight: 700;
+}
+.gx-player-knights { color: var(--gx-gold); }
+.gx-main .gx-dev .development-hand {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: .4rem;
+  max-height: min(18rem, 32vh);
+  overflow: auto;
+  padding: .35rem 0;
+}
+.gx-main .gx-dev .dev-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  min-width: 0;
+  gap: .35rem;
+  padding: .55rem;
+  border: 1px solid var(--gx-line);
+  border-radius: .6rem;
+  background: var(--gx-surface-2);
+}
+.gx-main .gx-dev .dev-card .gx-btn { min-height: 2rem; }
+@media (max-width: 760px) {
+  .gx-build-hint { white-space: normal; }
+  .gx-main .gx-dev .development-hand { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 12rem; }
+}
