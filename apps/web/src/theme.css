@@ -1,0 +1,228 @@
+/*
+ * DiMaT — CENTRAL THEME
+ * Edit colors ONLY in the two palettes below.
+ * All application chrome and UI surfaces consume these variables.
+ * Board terrain artwork and player-piece colors intentionally remain separate.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* Dark palette */
+  --dimat-bg-950: #091711;
+  --dimat-bg-900: #0d1e17;
+  --dimat-forest-950: #10251f;
+  --dimat-forest-900: #19352c;
+  --dimat-forest-800: #244237;
+  --dimat-forest-700: #315344;
+  --dimat-gold: #c69b59;
+  --dimat-gold-light: #e2bd79;
+  --dimat-parchment: #e8d5ad;
+  --dimat-parchment-light: #f3e5c7;
+  --dimat-cream: #f2e8d2;
+  --dimat-sage: #a8b6a5;
+  --dimat-brown: #67472d;
+  --dimat-danger: #b84f3d;
+  --dimat-warning: #9a6a16;
+  --dimat-ok: #557b43;
+
+  /* Shape and depth */
+  --dimat-radius: .75rem;
+  --dimat-shadow: 0 12px 32px rgba(0, 0, 0, .28);
+  --dimat-inset: inset 0 1px rgba(255, 255, 255, .08);
+  --dimat-display: Georgia, 'Times New Roman', serif;
+  --dimat-body: Inter, ui-sans-serif, system-ui, sans-serif;
+
+  /* Compatibility aliases used by older components */
+  --sea: var(--dimat-bg-950);
+  --sand: var(--dimat-parchment);
+  --ink: var(--dimat-cream);
+  --muted-ink: var(--dimat-sage);
+  --accent: var(--dimat-gold-light);
+  --dimat-text: var(--dimat-cream);
+  --dimat-text-muted: var(--dimat-sage);
+  --dimat-border: rgba(198, 155, 89, .22);
+  --dimat-border-strong: rgba(198, 155, 89, .42);
+  --dimat-focus: var(--dimat-gold-light);
+
+  --gx-bg: var(--dimat-bg-950);
+  --gx-surface: var(--dimat-forest-950);
+  --gx-surface-2: var(--dimat-forest-900);
+  --gx-surface-3: var(--dimat-forest-800);
+  --gx-line: var(--dimat-border);
+  --gx-line-strong: var(--dimat-border-strong);
+  --gx-text: var(--dimat-cream);
+  --gx-dim: var(--dimat-sage);
+  --gx-gold: var(--dimat-gold);
+  --gx-gold-soft: rgba(198, 155, 89, .15);
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+
+  /* Light palette */
+  --dimat-bg-950: #e9dfc9;
+  --dimat-bg-900: #f3e9d2;
+  --dimat-forest-950: #e9dfc9;
+  --dimat-forest-900: #f3e9d2;
+  --dimat-forest-800: #dfcba3;
+  --dimat-forest-700: #d3bd8c;
+  --dimat-gold: #916b33;
+  --dimat-gold-light: #b68845;
+  --dimat-parchment: #e8d5ad;
+  --dimat-parchment-light: #f8efd9;
+  --dimat-cream: #302718;
+  --dimat-sage: #6f624c;
+  --dimat-brown: #67472d;
+  --dimat-danger: #9d3f32;
+  --dimat-warning: #80540c;
+  --dimat-ok: #3f6938;
+
+  --dimat-shadow: 0 12px 28px rgba(66, 48, 23, .16);
+  --dimat-inset: inset 0 1px rgba(255, 255, 255, .55);
+  --sea: var(--dimat-bg-950);
+  --sand: var(--dimat-parchment);
+  --ink: var(--dimat-cream);
+  --muted-ink: var(--dimat-sage);
+  --accent: var(--dimat-gold);
+  --dimat-text: var(--dimat-cream);
+  --dimat-text-muted: var(--dimat-sage);
+  --dimat-border: rgba(103, 71, 45, .22);
+  --dimat-border-strong: rgba(103, 71, 45, .38);
+  --dimat-focus: var(--dimat-gold);
+  --gx-bg: var(--dimat-bg-950);
+  --gx-surface: var(--dimat-forest-950);
+  --gx-surface-2: var(--dimat-forest-900);
+  --gx-surface-3: var(--dimat-forest-800);
+  --gx-line: var(--dimat-border);
+  --gx-line-strong: var(--dimat-border-strong);
+  --gx-text: var(--dimat-cream);
+  --gx-dim: var(--dimat-sage);
+  --gx-gold: var(--dimat-gold);
+  --gx-gold-soft: rgba(145, 107, 51, .12);
+}
+
+/* Global application surfaces */
+html, body, body.surface-page {
+  color: var(--dimat-cream);
+  background-color: var(--dimat-bg-950);
+  font-family: var(--dimat-body);
+}
+body, body.surface-page {
+  background-image:
+    radial-gradient(ellipse at 50% 12%, color-mix(in srgb, var(--dimat-forest-700) 28%, transparent), transparent 60%),
+    linear-gradient(155deg, var(--dimat-bg-900), var(--dimat-bg-950));
+  background-attachment: fixed;
+}
+#app, main:not(.gx-main) { color: var(--dimat-cream); }
+.top, .roomhead, .gx-header {
+  color: var(--dimat-cream);
+  background: linear-gradient(180deg, var(--dimat-forest-950), var(--dimat-bg-950));
+  border-color: var(--dimat-border);
+}
+.brand, .gx-header .brand { color: var(--dimat-gold-light); }
+
+.card, .roster, .hint-box, .map-editor, .map-editor-panel,
+.bottom-bar, .game-sidebar, .game-left-sidebar, .boardcard {
+  color: var(--dimat-cream);
+  background: linear-gradient(148deg, var(--dimat-forest-950), var(--dimat-bg-900));
+  border-color: var(--dimat-border);
+  box-shadow: var(--dimat-shadow), var(--dimat-inset);
+}
+h1, h2, h3, .card h1, .card h2, .card h3 { color: var(--dimat-parchment); }
+p, label, .muted, .gx-label, .gx-empty, .connection-indicator { color: var(--dimat-sage); }
+
+button, input, select, textarea, .trade-select {
+  color: var(--dimat-cream);
+  background: linear-gradient(180deg, var(--dimat-forest-800), var(--dimat-forest-900));
+  border-color: var(--dimat-border-strong);
+}
+button:hover:not(:disabled) {
+  color: var(--dimat-gold-light);
+  border-color: var(--dimat-gold);
+}
+button.primary, .gx-main .gx-btn.primary {
+  color: var(--dimat-bg-950);
+  background: linear-gradient(180deg, var(--dimat-gold-light), var(--dimat-gold));
+  border-color: var(--dimat-gold-light);
+}
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--dimat-focus);
+  outline-offset: 2px;
+}
+.pill, .gx-chip, .resource {
+  color: var(--dimat-parchment);
+  background: var(--dimat-bg-900);
+  border-color: var(--dimat-border);
+}
+.resource b { color: var(--dimat-cream); }
+.chat-transcript, .debug-json, .debug-section, .event,
+.resource-counter-row, .trade-target, .open-trade-offer, .incoming-trade,
+.trade-resource-group, .trade-targets, .trade-summary, .trade-term,
+.bank-trade-summary {
+  color: var(--dimat-cream);
+  background: var(--dimat-bg-900);
+  border-color: var(--dimat-border);
+}
+.trade-resource-group legend, .trade-targets legend,
+.trade-summary-side > strong, .open-trade-offer h3, .incoming-trade h3 {
+  color: var(--dimat-gold-light);
+}
+
+/* Light mode surface mapping */
+html[data-theme="light"], html[data-theme="light"] body,
+html[data-theme="light"] body.surface-page {
+  color: var(--dimat-cream);
+  background-color: var(--dimat-bg-950);
+  background-image: radial-gradient(ellipse at 50% 12%, var(--dimat-parchment-light), transparent 68%);
+}
+html[data-theme="light"] .top,
+html[data-theme="light"] .roomhead,
+html[data-theme="light"] .gx-header {
+  color: var(--dimat-cream);
+  background: linear-gradient(180deg, var(--dimat-forest-950), var(--dimat-bg-900));
+}
+html[data-theme="light"] .card,
+html[data-theme="light"] .roster,
+html[data-theme="light"] .hint-box,
+html[data-theme="light"] .map-editor,
+html[data-theme="light"] .map-editor-panel,
+html[data-theme="light"] .bottom-bar,
+html[data-theme="light"] .game-sidebar,
+html[data-theme="light"] .game-left-sidebar,
+html[data-theme="light"] .boardcard {
+  color: var(--dimat-cream);
+  background: linear-gradient(148deg, var(--dimat-forest-950), var(--dimat-forest-900));
+  border-color: var(--dimat-border);
+  box-shadow: var(--dimat-shadow), var(--dimat-inset);
+}
+html[data-theme="light"] button,
+html[data-theme="light"] input,
+html[data-theme="light"] select,
+html[data-theme="light"] textarea,
+html[data-theme="light"] .trade-select {
+  color: var(--dimat-cream);
+  background: linear-gradient(180deg, var(--dimat-parchment-light), var(--dimat-parchment));
+  border-color: var(--dimat-border-strong);
+}
+html[data-theme="light"] button.primary,
+html[data-theme="light"] .gx-main .gx-btn.primary {
+  color: var(--dimat-parchment-light);
+  background: linear-gradient(180deg, var(--dimat-gold), var(--dimat-brown));
+}
+html[data-theme="light"] .pill,
+html[data-theme="light"] .gx-chip,
+html[data-theme="light"] .resource,
+html[data-theme="light"] .chat-transcript,
+html[data-theme="light"] .debug-json,
+html[data-theme="light"] .debug-section,
+html[data-theme="light"] .event,
+html[data-theme="light"] .resource-counter-row,
+html[data-theme="light"] .trade-target,
+html[data-theme="light"] .open-trade-offer,
+html[data-theme="light"] .incoming-trade {
+  color: var(--dimat-cream);
+  background: var(--dimat-parchment-light);
+  border-color: var(--dimat-border);
+}
+html[data-theme="light"] .resource b { color: var(--dimat-cream); }
