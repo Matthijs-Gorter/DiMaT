@@ -476,6 +476,8 @@ function renderPlayerList(viewState:PlayerView){
     addStat('Wegen op bord',roads,'<path d="m5 19 14-14" stroke="currentColor" stroke-width="3" stroke-linecap="round" fill="none"/>','roads');
     addStat('Nederzettingen op bord',settlements,'<path d="M3 11 12 3l9 8v10H3z"/>','settlements');
     addStat('Steden op bord',cities,'<path d="M3 21V10l4-3 4 3V6l5-4 5 4v15z"/>','cities');
+    addStat('Gespeelde ridders',player.knightsPlayed,'<path d="M4 20 20 4M8 4h12v12"/>','knights');
+    if(player.hasLargestArmy)row.append(element('span','gx-award-badge','♞ Grootste riddermacht'));
     row.append(identity,stats);list.append(row);
   }
   return list;
