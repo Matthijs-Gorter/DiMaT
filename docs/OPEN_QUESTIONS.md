@@ -10,6 +10,7 @@ Items marked VERIFY in RULES.md require confirmation against the corresponding o
 - [ ] Cities & Knights: level-3 improvement perks, metropolis transfer rules, progress-card draw timing and hand limit.
 - [ ] Seafarers + Cities & Knights: which road actions and knight movement rules apply to ships.
 - [ ] 5-6 player phase: special building phase details and whether it is in scope for base release.
+- [ ] Verify official turn/setup rules for 2-player and 5–8 participant base games; current implementation applies the existing setup and turn flow uniformly, as documented in `DECISIONS.md`.
 - [x] Domestic counter-offer sequencing — one counter-offer level addressed only to the original proposer; see `DECISIONS.md` (Phase 2b).
 - [x] Domestic trade bundles — multiple resource types may appear on either side, with positive counts and no overlapping resource types; see `DECISIONS.md` (Phase 2b).
 - [x] Online domestic-trade consent flow — explicit acceptance before atomic transfer, public decline state, cancellation/replacement, and documented offer lifetime; see `DECISIONS.md` (Phase 2b).

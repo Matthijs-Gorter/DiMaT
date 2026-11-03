@@ -38,13 +38,18 @@ export const mapDefinitionSchema=z.object({
 export const mapCodeSchema=z.string().regex(/^[A-Z0-9]{6}$/);
 export const createRoomSchema=z.object({
   displayName:z.string().trim().min(1).max(32),
-  humanCount:z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4)]).default(2),
-  botCount:z.union([z.literal(0),z.literal(1),z.literal(2),z.literal(3)]).default(1),
+  humanCount:z.number().int().min(1).max(8).default(2),
+  botCount:z.number().int().min(0).max(7).default(1),
   seed:z.number().int().optional(),
-  mapCode:mapCodeSchema.optional()
-}).refine(({humanCount,botCount})=>humanCount+botCount===3||humanCount+botCount===4,{
+  mapCode:mapCodeSchema.optional(),
+  mapDefinition:mapDefinitionSchema.optional(),
+  startImmediately:z.boolean().optional()
+}).refine(({humanCount,botCount})=>humanCount+botCount>=2&&humanCount+botCount<=8,{
   path:['botCount'],
-  message:'The room must contain three or four players in total.'
+  message:'The room must contain two to eight players in total.'
+}).refine(({mapCode,mapDefinition})=>!(mapCode&&mapDefinition),{
+  path:['mapDefinition'],
+  message:'Provide a map code or a map definition, not both.'
 });
 export type MapDefinitionInput=z.infer<typeof mapDefinitionSchema>;
 const partialResources=z.object({

@@ -2,20 +2,23 @@ import { BalanceError, assignNumbers, balanceResources, placeHarbors, scaleResou
 import { generateTerrain, GenerationError, type TerrainOptions, type TerrainStyle } from './generators.js';
 import { makeRng } from './rng.js';
 import { computeRegions, validateMap } from './validate.js';
-import type { MapDefinition, MapTile, Resource } from './types.js';
+import { RESOURCES, type MapDefinition, type MapTile, type Resource } from './types.js';
+
+export const GENERATOR_VERSION = 2;
 
 export interface GenerateOptions extends TerrainOptions {
   style: TerrainStyle;
   seed: number;
-  players: 3 | 4 | 5 | 6 | 7 | 8;
+  players: 2 | 3 | 4 | 5 | 6 | 7 | 8;
   balance: 'random' | 'balanced';
+  avoidAdjacentRed?: boolean;
   victoryTarget?: number;
   maxAttempts?: number;
 }
 
 export function generateMap(options: GenerateOptions): MapDefinition {
   if (!Number.isSafeInteger(options.seed)) throw new RangeError('seed must be a safe integer');
-  if (!Number.isInteger(options.players) || options.players < 3 || options.players > 8) throw new RangeError('players must be from 3 to 8');
+  if (!Number.isInteger(options.players) || options.players < 2 || options.players > 8) throw new RangeError('players must be from 2 to 8');
   const maxAttempts = options.maxAttempts ?? 64;
   if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 1000) throw new RangeError('maxAttempts must be from 1 to 1000');
 
@@ -33,14 +36,19 @@ export function generateMap(options: GenerateOptions): MapDefinition {
       };
       const terrain = generateTerrain(options.style, terrainOptions, makeRng(options.seed, `terrain:${attempt}`));
       const counts = scaleResourceCounts(terrain.land.length, options.players);
-      const kinds: Resource[] = [
-        ...Array<Resource>(counts.brick).fill('brick'),
-        ...Array<Resource>(counts.lumber).fill('lumber'),
-        ...Array<Resource>(counts.wool).fill('wool'),
-        ...Array<Resource>(counts.grain).fill('grain'),
-        ...Array<Resource>(counts.ore).fill('ore')
-      ];
-      const resourceKinds = makeRng(options.seed, `resources:${attempt}`).shuffle(kinds);
+      const resourceRng = makeRng(options.seed, `resources:${attempt}`);
+      const resourceTiles = terrain.land.length - counts.desert;
+      if (options.style === 'random' && resourceTiles < RESOURCES.length) throw new GenerationError('random maps need at least one tile for each resource type');
+      const kinds: Resource[] = options.style === 'random'
+        ? [...RESOURCES, ...Array.from({ length: Math.max(0, resourceTiles - RESOURCES.length) }, () => resourceRng.pick(RESOURCES))]
+        : [
+          ...Array<Resource>(counts.brick).fill('brick'),
+          ...Array<Resource>(counts.lumber).fill('lumber'),
+          ...Array<Resource>(counts.wool).fill('wool'),
+          ...Array<Resource>(counts.grain).fill('grain'),
+          ...Array<Resource>(counts.ore).fill('ore')
+        ];
+      const resourceKinds = resourceRng.shuffle(kinds);
       let resourceIndex = 0;
       const land: MapTile[] = terrain.land.map(tile => ({
         ...tile,
@@ -48,18 +56,20 @@ export function generateMap(options: GenerateOptions): MapDefinition {
         number: null,
         islandId: 0
       }));
-      const balancedResources = balanceResources(land, makeRng(options.seed, `resource-balance:${attempt}`));
+      const balancedResources = options.balance === 'balanced' && options.style !== 'random'
+        ? balanceResources(land, makeRng(options.seed, `resource-balance:${attempt}`))
+        : land;
       const tiles = assignNumbers([
         ...balancedResources,
         ...terrain.water.map(tile => ({ ...tile, kind: 'water' as const, number: null, islandId: 0 }))
-      ], makeRng(options.seed, `numbers:${attempt}`));
+      ], makeRng(options.seed, `numbers:${attempt}`), options.avoidAdjacentRed ?? options.style !== 'random');
       const definition: MapDefinition = {
         schemaVersion: 1,
         id: `generated-${options.style}-${options.seed}`,
         name: `${options.style} ${options.seed}`,
         style: options.style,
         seed: options.seed,
-        players: { min: options.players, max: options.players },
+        players: { min: 2, max: 8 },
         victoryTarget: options.victoryTarget ?? 10,
         tiles: tiles.sort((a, b) => a.r - b.r || a.q - b.q),
         harbors: [],
@@ -68,10 +78,11 @@ export function generateMap(options: GenerateOptions): MapDefinition {
         features: [],
         allowSeparateIslands: options.style === 'archipelago',
         meta: {
-          generatorVersion: 1,
+          generatorVersion: GENERATOR_VERSION,
           attempts: attempt + 1,
           options: {
             balance: options.balance,
+            avoidAdjacentRed: options.avoidAdjacentRed ?? options.style !== 'random',
             ...(options.landTarget === undefined ? {} : { landTarget: options.landTarget }),
             ...(options.islandCount === undefined ? {} : { islandCount: options.islandCount }),
             ...(options.riverCount === undefined ? {} : { riverCount: options.riverCount }),
@@ -96,7 +107,8 @@ export function generateMap(options: GenerateOptions): MapDefinition {
         balance: options.balance,
         players: options.players,
         startSpreadMax: 5,
-        minIslandSize: options.style === 'archipelago' ? 4 : 3
+        minIslandSize: options.style === 'archipelago' ? 4 : 3,
+        avoidAdjacentRed: options.avoidAdjacentRed ?? options.style !== 'random'
       });
       if (validation.ok) return withHarbors;
       lastFailure = validation.errors.join('; ');

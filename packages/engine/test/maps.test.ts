@@ -20,11 +20,26 @@ describe('engine map settings', () => {
     expect(state.bank).toEqual({ brick: 50, lumber: 50, wool: 50, grain: 50, ore: 50 });
   });
 
-  it('rejects maps that do not support the room player count or violate validation', () => {
+  it('honors the saved random-map red-token adjacency preference', () => {
+    const map = generateMap({ style: 'random', seed: 8, players: 4, balance: 'random', avoidAdjacentRed: false });
+    expect(map.meta.options?.avoidAdjacentRed).toBe(false);
+    expect(() => createGame(73, { playerCount: 4, map })).not.toThrow();
+  });
+
+  it('supports two through eight participants regardless of map preset metadata', () => {
     const map = generateMap({ style: 'standard', seed: 1, players: 3, balance: 'random' });
-    expect(() => createGame(73, { playerCount: 4, map })).toThrow(/does not support 4 players/);
+    map.players = { min: 3, max: 4 };
+    for (const playerCount of [2,3,4,5,6,7,8]) {
+      const state = createGame(73, { playerCount, map });
+      expect(state.players).toHaveLength(playerCount);
+      expect(state.setupOrder).toHaveLength(playerCount * 2);
+    }
+  });
+
+  it('rejects invalid map data on game initialization', () => {
+    const map = generateMap({ style: 'standard', seed: 1, players: 3, balance: 'random' });
     const invalid = structuredClone(map);
     invalid.tiles[0]!.number = 1;
-    expect(() => createGame(73, { playerCount: 3, map: invalid })).toThrow(/is invalid/);
+    expect(() => createGame(73, { playerCount: 3, map: invalid })).toThrow(/invalid/);
   });
 });

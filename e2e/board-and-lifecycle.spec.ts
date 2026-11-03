@@ -15,15 +15,17 @@ test('solo rooms can be created with the configured bot seats',async({browser})=
   const host=await browser.newPage();
   await host.goto('/');
   await host.getByPlaceholder('Je naam').fill('Solo');
-  await expect(host.getByLabel('Aantal bots').locator('option')).toHaveCount(2);
-  await host.getByLabel('Aantal menselijke spelers').selectOption('3');
-  await expect(host.getByLabel('Aantal bots').locator('option')).toHaveCount(2);
-  await host.getByLabel('Aantal menselijke spelers').selectOption('4');
-  await expect(host.getByLabel('Aantal bots').locator('option')).toHaveCount(1);
-  await host.getByLabel('Aantal menselijke spelers').selectOption('1');
-  await expect(host.getByLabel('Aantal bots').locator('option')).toHaveCount(2);
+  await expect(host.getByLabel('Aantal bots').locator('option')).toHaveCount(7);
+  await host.getByRole('button',{name:'Meer menselijke spelers'}).click();
+  await expect(host.getByLabel('Aantal bots').locator('option')).toHaveCount(6);
+  await host.getByRole('button',{name:'Meer menselijke spelers'}).click();
+  await expect(host.getByLabel('Aantal bots').locator('option')).toHaveCount(5);
+  await host.getByRole('button',{name:'Minder menselijke spelers'}).click();
+  await host.getByRole('button',{name:'Minder menselijke spelers'}).click();
+  await host.getByRole('button',{name:'Minder menselijke spelers'}).click();
+  await expect(host.getByLabel('Aantal bots').locator('option')).toHaveCount(7);
   await host.getByLabel('Aantal bots').selectOption('2');
-  await expect(host.getByText('1 menselijke speler en 2 bots · 3 spelers totaal (3–4)')).toBeVisible();
+  await expect(host.getByText('1 menselijke speler en 2 bots · 3 / 8 spelers')).toBeVisible();
   await host.getByRole('button',{name:'Nieuwe kamer'}).click();
   await expect(host).toHaveURL(/\/play\/[a-f0-9]+/);
   await expect(host.getByText('Bot 1 · bot')).toBeVisible();
@@ -111,25 +113,24 @@ async function clickBoardTarget(page:Page,selector:string){
 async function reachHostBuildPhase(host:Page,guest:Page){
   await host.getByRole('button',{name:'Start spel'}).click();
   for(let step=0;step<40;step++){
-    const phaseText=await host.locator('.game-sidebar>p.muted').textContent();if(phaseText?.includes('Fase: roll'))break;
-    const active=await host.locator('.player-panel.active').textContent();if(!active)continue;
-    if(active.includes('Bot 1')){await expect.poll(async()=>!(await host.locator('.player-panel.active').textContent())?.includes('Bot 1'),{timeout:10000}).toBe(true);continue;}
+    const phase=await host.locator('.gx-main').getAttribute('data-game-phase');if(phase==='roll')break;
+    const active=await host.locator('.gx-player.active').textContent();if(!active)continue;
+    if(active.includes('Bot 1')){await expect.poll(async()=>!(await host.locator('.gx-player.active').textContent())?.includes('Bot 1'),{timeout:10000}).toBe(true);continue;}
     const page=active.includes('Host')?host:guest;
-    if(phaseText?.includes('setupSettlement')){await clickBoardTarget(page,'.spot.legal');await expect(page.locator('.game-sidebar>p.muted')).toContainText('setupRoad');}
-    if((await page.locator('.game-sidebar>p.muted').textContent())?.includes('setupRoad')){await clickBoardTarget(page,'.road-edge.legal');await expect(page.locator('.game-sidebar>p.muted')).not.toContainText('setupRoad',{timeout:5000});}
+    if(phase==='setupSettlement'){await clickBoardTarget(page,'.spot.legal');await expect(page.locator('.gx-main')).toHaveAttribute('data-game-phase','setupRoad');}
+    if((await page.locator('.gx-main').getAttribute('data-game-phase'))==='setupRoad'){await clickBoardTarget(page,'.road-edge.legal');await expect(page.locator('.gx-main')).not.toHaveAttribute('data-game-phase','setupRoad',{timeout:5000});}
   }
-  await expect(host.locator('.game-sidebar>p.muted')).toContainText('Fase: roll');
+  await expect(host.locator('.gx-main')).toHaveAttribute('data-game-phase','roll');
   await host.getByRole('button',{name:'Gooi de dobbelstenen'}).click();
-  await expect.poll(async()=>await host.locator('.game-sidebar>p.muted').textContent()).toMatch(/Fase: (robber|build)/);
-  if((await host.locator('.game-sidebar>p.muted').textContent())?.includes('Fase: robber'))await clickBoardTarget(host,'.legal-tile[data-victim-count="0"]');
-  await expect(host.locator('.game-sidebar>p.muted')).toContainText('Fase: build');
+  await expect.poll(async()=>await host.locator('.gx-main').getAttribute('data-game-phase')).toMatch(/^(robber|build)$/);
+  if((await host.locator('.gx-main').getAttribute('data-game-phase'))==='robber')await clickBoardTarget(host,'.legal-tile[data-victim-count="0"]');
+  await expect(host.locator('.gx-main')).toHaveAttribute('data-game-phase','build');
 }
 
 async function tradeablePair(host:Page,guest:Page){
-  const readHand=async(page:Page)=>page.locator('.bottom-bar .resource').evaluateAll(cells=>Object.fromEntries(cells.map(cell=>{
-    const label=cell.childNodes[0]?.textContent?.trim().split(' ').at(-1)??'',value=Number(cell.querySelector('b')?.textContent);
-    const resource=({brick:'brick',hout:'lumber',wol:'wool',graan:'grain',erts:'ore'} as Record<string,string>)[label];return [resource,value];
-  }).filter(([resource])=>typeof resource==='string')));
+  const readHand=async(page:Page)=>page.locator('.gx-hud .gx-slot').evaluateAll(cells=>Object.fromEntries(cells.map(cell=>[
+    (cell as HTMLElement).dataset.resource,Number(cell.querySelector('.gx-slot-count')?.textContent)
+  ])));
   const hostHand=await readHand(host) as Record<string,number>,guestHand=await readHand(guest) as Record<string,number>;
   const give=Object.keys(hostHand).find(resource=>hostHand[resource]!>0&&Object.keys(guestHand).some(want=>want!==resource&&guestHand[want]!>0));
   const want=Object.keys(guestHand).find(resource=>resource!==give&&guestHand[resource]!>0);
@@ -151,7 +152,7 @@ test('lobby does not expose action submission before the server starts the game'
   const {host,hostContext,guestContext}=await createTwoHumansAndBot(browser);
   await expect(host.locator('.actions')).toBeHidden();
   await host.evaluate(()=>{(window as Window&{dimatSend?:WebSocket}).dimatSend?.send(JSON.stringify({type:'action',sequence:1,action:{type:'placeSettlement',playerId:'p0',vertex:0}}));});
-  await expect(host.getByText(/GAME_NOT_STARTED/)).toBeVisible();
+  await expect(host.locator('.gx-notice')).toContainText('Het spel is nog niet gestart.');
   await guestContext.close();await hostContext.close();
 });
 
@@ -215,44 +216,46 @@ test('desktop game layout fits common laptop and desktop viewports',async({brows
     await host.evaluate(theme=>{document.documentElement.dataset.theme=theme;},index%2?'dark':'light');
     const layout=await host.evaluate(()=>{
       const board=document.querySelector<HTMLElement>('.boardcard')!.getBoundingClientRect();
-      const bottomBar=document.querySelector<HTMLElement>('.bottom-bar')!.getBoundingClientRect();
-      const leftSidebar=document.querySelector<HTMLElement>('.game-left-sidebar')!.getBoundingClientRect();
-      const sidebar=document.querySelector<HTMLElement>('.game-sidebar')!.getBoundingClientRect();
+      const bottomBar=document.querySelector<HTMLElement>('.gx-hud')!.getBoundingClientRect();
+      const leftSidebar=document.querySelector<HTMLElement>('.gx-side-left')!.getBoundingClientRect();
+      const sidebar=document.querySelector<HTMLElement>('.gx-side-right')!.getBoundingClientRect();
       const svg=document.querySelector<SVGSVGElement>('.board')!.getBoundingClientRect();
-      const bankColumns=getComputedStyle(document.querySelector<HTMLElement>('.bank-panel .hand')!).gridTemplateColumns.split(' ').length;
-      return {viewportWidth:window.innerWidth,scrollWidth:document.documentElement.scrollWidth,viewportHeight:window.innerHeight,scrollHeight:document.documentElement.scrollHeight,leftSidebar:{left:leftSidebar.left,right:leftSidebar.right},board:{left:board.left,right:board.right,bottom:board.bottom,width:board.width},bottomBar:{top:bottomBar.top},sidebar:{left:sidebar.left,right:sidebar.right},svg:{width:svg.width,height:svg.height},bankColumns};
+      const bankColumns=getComputedStyle(document.querySelector<HTMLElement>('.gx-bank')!).gridTemplateColumns.split(' ').length;
+      return {viewportWidth:window.innerWidth,scrollWidth:document.documentElement.scrollWidth,viewportHeight:window.innerHeight,scrollHeight:document.documentElement.scrollHeight,leftSidebar:{left:leftSidebar.left,right:leftSidebar.right,bottom:leftSidebar.bottom},board:{left:board.left,right:board.right,bottom:board.bottom,width:board.width},bottomBar:{top:bottomBar.top},sidebar:{left:sidebar.left,right:sidebar.right,bottom:sidebar.bottom},svg:{width:svg.width,height:svg.height},bankColumns};
     });
     expect(layout.scrollWidth,`horizontal overflow at ${viewport.width}x${viewport.height}`).toBeLessThanOrEqual(layout.viewportWidth);
     expect(layout.scrollHeight,`vertical overflow at ${viewport.width}x${viewport.height}`).toBeLessThanOrEqual(layout.viewportHeight+1);
-    expect(layout.leftSidebar.right).toBeLessThanOrEqual(layout.board.left);
-    expect(layout.board.right).toBeLessThanOrEqual(layout.sidebar.left);
-    expect(layout.board.bottom,`board overlaps bottom bar at ${viewport.width}x${viewport.height}`).toBeLessThanOrEqual(layout.bottomBar.top);
+    expect(layout.leftSidebar.left).toBeGreaterThanOrEqual(0);
+    expect(layout.leftSidebar.right).toBeLessThanOrEqual(layout.viewportWidth);
+    expect(layout.sidebar.left).toBeGreaterThanOrEqual(0);
+    expect(layout.sidebar.right).toBeLessThanOrEqual(layout.viewportWidth);
+    expect(layout.leftSidebar.bottom).toBeLessThanOrEqual(layout.bottomBar.top);
+    expect(layout.sidebar.bottom).toBeLessThanOrEqual(layout.bottomBar.top);
     expect(layout.bankColumns,`bank items should wrap into three columns at ${viewport.width}x${viewport.height}`).toBe(3);
     expect(layout.svg.width,`board width at ${viewport.width}x${viewport.height}: ${JSON.stringify(layout)}`).toBeGreaterThan(250);
     expect(layout.svg.height,`board height at ${viewport.width}x${viewport.height}: ${JSON.stringify(layout)}`).toBeGreaterThan(250);
   }
-  await expect(host.locator('.game-left-sidebar .players .player-panel')).toHaveCount(3);
-  await expect(host.locator('.game-left-sidebar .player-card-count')).toHaveCount(3);
-  await expect(host.locator('.game-left-sidebar .player-card-count').first()).toHaveText(/^\d+ kaarten$/);
-  await expect(host.locator('.game-left-sidebar .player-panel').first()).not.toContainText(/VP zichtbaar|grondstofkaarten|ontwikkelingskaarten|ridders|handelsroute|wegen|steden/);
-  await expect(host.locator('.game-left-sidebar .event-log-title')).toHaveText('Gebeurtenissen');
+  await expect(host.locator('.gx-side-left .gx-player')).toHaveCount(3);
+  await expect(host.locator('.gx-side-left .gx-stat-resources')).toHaveCount(3);
+  await expect(host.locator('.gx-side-left .gx-player').first()).not.toContainText(/grondstofkaarten|ontwikkelingskaarten/);
+  await expect(host.locator('.gx-side-right .gx-events .gx-title')).toHaveText('Gebeurtenissen');
   await guestContext.close();await hostContext.close();
 });
 
 test('both humans complete the full setup on the board and roll to begin play',async({browser})=>{
   const {host,hostContext,guest,guestContext}=await createTwoHumansAndBot(browser);await host.getByRole('button',{name:'Start spel'}).click();
   for(let step=0;step<40;step++){
-    const phaseText=await host.locator('.game-sidebar>p.muted').textContent();if(phaseText?.includes('Fase: roll'))break;
-    const active=await host.locator('.player-panel.active').textContent();if(!active)continue;
-    if(active.includes('Bot 1')){await expect.poll(async()=>!(await host.locator('.player-panel.active').textContent())?.includes('Bot 1'),{timeout:10000}).toBe(true);continue;}
+    const phase=await host.locator('.gx-main').getAttribute('data-game-phase');if(phase==='roll')break;
+    const active=await host.locator('.gx-player.active').textContent();if(!active)continue;
+    if(active.includes('Bot 1')){await expect.poll(async()=>!(await host.locator('.gx-player.active').textContent())?.includes('Bot 1'),{timeout:10000}).toBe(true);continue;}
     const page=active.includes('Host')?host:guest;
-    if(phaseText?.includes('setupSettlement')){await clickBoardTarget(page,'.spot.legal');await expect(page.locator('.game-sidebar>p.muted')).toContainText('setupRoad');}
-    if((await page.locator('.game-sidebar>p.muted').textContent())?.includes('setupRoad')){await clickBoardTarget(page,'.road-edge.legal');await expect(page.locator('.game-sidebar>p.muted')).not.toContainText('setupRoad',{timeout:5000});}
+    if(phase==='setupSettlement'){await clickBoardTarget(page,'.spot.legal');await expect(page.locator('.gx-main')).toHaveAttribute('data-game-phase','setupRoad');}
+    if((await page.locator('.gx-main').getAttribute('data-game-phase'))==='setupRoad'){await clickBoardTarget(page,'.road-edge.legal');await expect(page.locator('.gx-main')).not.toHaveAttribute('data-game-phase','setupRoad',{timeout:5000});}
   }
-  await expect(host.locator('.game-sidebar>p.muted')).toContainText('Fase: roll');await expect(host.locator('.player-panel.active')).toContainText('Host');
+  await expect(host.locator('.gx-main')).toHaveAttribute('data-game-phase','roll');await expect(host.locator('.gx-player.active')).toContainText('Host');
   await host.setViewportSize({width:1024,height:768});
-  const bankTotal=await host.locator('.bank-panel .resource b').evaluateAll(nodes=>nodes.reduce((sum,node)=>sum+Number(node.textContent),0));expect(bankTotal).toBeLessThan(95);
-  await host.getByRole('button',{name:'Gooi de dobbelstenen'}).click();await expect.poll(async()=>await host.locator('.game-sidebar>p.muted').textContent()).toMatch(/Fase: (robber|build)/);if((await host.locator('.game-sidebar>p.muted').textContent())?.includes('Fase: robber')){await clickBoardTarget(host,'.legal-tile');if(await host.locator('.victim-picker').count())await host.locator('.victim-picker button').first().click();}await expect(host.locator('.game-sidebar>p.muted')).toContainText('Fase: build');
+  const bankTotal=await host.locator('.gx-bank .gx-slot-count').evaluateAll(nodes=>nodes.reduce((sum,node)=>sum+Number(node.textContent),0));expect(bankTotal).toBeLessThan(95);
+  await host.getByRole('button',{name:'Gooi de dobbelstenen'}).click();await expect.poll(async()=>await host.locator('.gx-main').getAttribute('data-game-phase')).toMatch(/^(robber|build)$/);if((await host.locator('.gx-main').getAttribute('data-game-phase'))==='robber'){await clickBoardTarget(host,'.legal-tile');if(await host.locator('.victim-picker').count())await host.locator('.victim-picker button').first().click();}await expect(host.locator('.gx-main')).toHaveAttribute('data-game-phase','build');
   await host.getByRole('button',{name:'Weg',exact:true}).click();await expect(host.locator('.road-edge.legal').first()).toBeVisible();await clickBoardTarget(host,'.road-edge.legal');await expect(host.locator('.road-piece')).toHaveCount(7);
   await guestContext.close();await hostContext.close();
 });
@@ -272,7 +275,7 @@ test('players offer and accept a domestic trade and both hands update',async({br
   expect(hostAfter.hostHand[pair.want]).toBe(pair.hostHand[pair.want]!+1);
   expect(hostAfter.guestHand[pair.give]).toBe(pair.guestHand[pair.give]!+1);
   expect(hostAfter.guestHand[pair.want]).toBe(pair.guestHand[pair.want]!-1);
-  await expect(host.locator('.game-left-sidebar .event').first()).toContainText('ruilde met Guest');
+  await expect(host.locator('.gx-event-list li').first()).toContainText('ruilde met Guest');
   await expect(tradePanel).toHaveAttribute('open','');
   await guestContext.close();await hostContext.close();
 });
@@ -282,7 +285,7 @@ test('a trade recipient can decline an offer',async({browser})=>{
   await reachHostBuildPhase(host,guest);await makeHumanTradeOffer(host,guest);
   await guest.getByRole('button',{name:'Afwijzen'}).click();
   await expect(host.locator('.open-trade-offer')).toContainText('Afgewezen door: Guest');
-  await expect(host.locator('.game-left-sidebar .event').first()).toContainText('wees een ruilvoorstel af');
+  await expect(host.locator('.gx-event-list li').first()).toContainText('wees een ruilvoorstel af');
   await guestContext.close();await hostContext.close();
 });
 
@@ -301,14 +304,14 @@ test('both browser contexts receive their own named seat and server-started game
   await host.getByRole('button',{name:'Start spel'}).click();
   await expect(host.locator('[data-game-lifecycle="started"]')).toBeVisible();
   await expect(guest.locator('[data-game-lifecycle="started"]')).toBeVisible();
-  await expect(host.getByText('Host',{exact:true})).toBeVisible();await expect(guest.getByText('Guest',{exact:true})).toBeVisible();
+  await expect(host.locator('.gx-player[data-player-id="p0"]')).toContainText('Host (jij)');await expect(guest.locator('.gx-player[data-player-id="p1"]')).toContainText('Guest (jij)');
   await expect(host.getByText('25 ontwikkelingskaarten over')).toBeVisible();
-  await expect(host.locator('.bank-panel .resource')).toHaveCount(5);
-  await expect(host.locator('.bottom-bar .resource').first()).toContainText('brick');
-  await expect(host.locator('.bottom-bar .resource').nth(1)).toContainText('hout');
-  await expect(host.locator('.bottom-bar .resource').nth(2)).toContainText('wol');
-  await expect(host.locator('.bottom-bar .resource').nth(3)).toContainText('graan');
-  await expect(host.locator('.bottom-bar .resource').nth(4)).toContainText('erts');
+  await expect(host.locator('.gx-bank .gx-slot')).toHaveCount(5);
+  await expect(host.locator('.gx-hud .gx-slot-name').nth(0)).toHaveText('hout');
+  await expect(host.locator('.gx-hud .gx-slot-name').nth(1)).toHaveText('brick');
+  await expect(host.locator('.gx-hud .gx-slot-name').nth(2)).toHaveText('wol');
+  await expect(host.locator('.gx-hud .gx-slot-name').nth(3)).toHaveText('graan');
+  await expect(host.locator('.gx-hud .gx-slot-name').nth(4)).toHaveText('erts');
   await guest.reload();await expect(guest.locator('[data-game-lifecycle="started"]')).toBeVisible();
   await guest.locator('.chat-form input').fill('Hoi!');await guest.locator('.chat-form button').click();await expect(host.getByText('Guest: Hoi!')).toBeVisible();
   await host.getByRole('button',{name:'Debug',exact:true}).click();await host.locator('.debug-actions>summary').click();await expect(host.getByRole('button',{name:'Kopieer debugbundel'})).toBeVisible();await expect(host.getByRole('button',{name:'Download replay'})).toBeVisible();await expect(host.locator('.debug-json').first()).toContainText('"viewHashMatches": true');

@@ -17,7 +17,7 @@ export interface Road { owner: number; }
 export interface HeldDevCard { kind: DevCard; boughtTurn: number; }
 export interface Player { id: string; resources: ResourceSet; devCards: HeldDevCard[]; knightsPlayed: number; roadsLeft: number; bridgesLeft: number; settlementsLeft: number; citiesLeft: number; revealedVictoryPoints: number; }
 export interface TradeOffer { id: number; proposerId: string; give: Partial<ResourceSet>; want: Partial<ResourceSet>; targets: string[]; declinedBy: string[]; }
-export interface GameSettings { playerCount: 3 | 4; victoryTarget: number; map?: MapDefinition; }
+export interface GameSettings { playerCount: number; victoryTarget: number; map?: MapDefinition; }
 export type Phase = 'setupSettlement' | 'setupRoad' | 'roll' | 'discard' | 'robber' | 'build' | 'finished';
 export interface GameState {
   version: 1; seed: number; rngState: number; settings: GameSettings; board: Board; players: Player[];

@@ -27,7 +27,7 @@ export class GenerationError extends Error {
 }
 
 function assertPlayers(players: number): void {
-  if (!Number.isInteger(players) || players < 3 || players > 8) throw new RangeError('players must be an integer from 3 to 8');
+  if (!Number.isInteger(players) || players < 2 || players > 8) throw new RangeError('players must be an integer from 2 to 8');
 }
 
 function defaultTarget(style: TerrainStyle, players: number, rng: Rng): number {
@@ -102,6 +102,44 @@ function makeContinent(target: number, rng: Rng, compactness = 0.7): Axial[] {
   return growBlob([{ q: 0, r: 0 }], target, allowed, rng, compactness);
 }
 
+/** Carve a connected, ragged coastline from a larger landmass by deterministic boundary erosion. */
+function makeIrregularLand(target: number, rng: Rng): Axial[] {
+  const initial = makeContinent(target + Math.max(5, Math.ceil(target * 0.22)), rng, 0.82);
+  const selected = new Map(initial.map(tile => [key(tile), tile] as const));
+  const protectedCore = new Set(initial.filter(tile => distance(tile, { q: 0, r: 0 }) <= 1).map(key));
+  while (selected.size > target) {
+    const land = [...selected.values()], occupied = new Set(land.map(key));
+    const boundary = land.map(tile => ({ tile, contacts: Array.from({ length: 6 }, (_, side) => key(neighbor(tile, side))).filter(id => occupied.has(id)).length, noise: rng.float() }))
+      .filter(item => !protectedCore.has(key(item.tile)) && item.contacts < 6)
+      .sort((a, b) => a.contacts - b.contacts || a.noise - b.noise);
+    const removable = boundary.find(item => connectedComponents(land.filter(tile => key(tile) !== key(item.tile))).length === 1);
+    if (!removable) throw new GenerationError('coastline erosion would disconnect the map');
+    selected.delete(key(removable.tile));
+  }
+  return sorted(selected.values());
+}
+
+/** Random maps are connected polyhexes grown from a seeded off-center nucleus. */
+function makeRandomLand(target: number, rng: Rng): Axial[] {
+  const radius = Math.ceil(Math.sqrt(target)) + 3, allowed = new Set(disc({ q: 0, r: 0 }, radius).map(key));
+  const nucleus = rng.pick(ring({ q: 0, r: 0 }, Math.max(1, Math.floor(radius / 3))));
+  const land = new Map<string, Axial>([[key(nucleus), nucleus]]);
+  while (land.size < target) {
+    const frontier = new Map<string, { tile: Axial; contacts: number }>();
+    for (const tile of land.values()) for (let side = 0; side < 6; side++) {
+      const candidate = neighbor(tile, side), id = key(candidate);
+      if (!allowed.has(id) || land.has(id)) continue;
+      const previous = frontier.get(id);
+      frontier.set(id, { tile: candidate, contacts: (previous?.contacts ?? 0) + 1 });
+    }
+    if (!frontier.size) throw new GenerationError('random growth exhausted its allowed region');
+    const candidates = [...frontier.values()];
+    const selected = rng.weightedPick(candidates, item => 1 + item.contacts * (0.25 + rng.float() * 0.4) + rng.float() * 3);
+    land.set(key(selected.tile), selected.tile);
+  }
+  return sorted(land.values());
+}
+
 function archipelago(target: number, players: number, rng: Rng, requestedCount?: number): Axial[] {
   const maxCount = Math.min(Math.floor(target / 4), Math.floor((target - Math.ceil(target * 0.35)) / 4) + 1);
   const defaultCount = players <= 4 ? Math.min(maxCount, 3 + rng.int(3)) : players <= 6 ? Math.min(maxCount, 4 + rng.int(3)) : Math.min(maxCount, 6 + rng.int(4));
@@ -111,7 +149,6 @@ function archipelago(target: number, players: number, rng: Rng, requestedCount?:
   }
 
   const sizes = Array<number>(count).fill(4);
-  sizes[0] = Math.max(4, Math.ceil(target * 0.35));
   let remainder = target - sizes.reduce((sum, size) => sum + size, 0);
   if (remainder < 0) throw new RangeError(`islandCount ${count} cannot fit ${target} tiles with 4-tile minima`);
   while (remainder-- > 0) sizes[rng.int(count)]!++;
@@ -136,71 +173,89 @@ function archipelago(target: number, players: number, rng: Rng, requestedCount?:
 function riverEdges(land: readonly Axial[], count: number, rng: Rng): MapRiverEdge[] {
   if (!Number.isInteger(count) || count < 1 || count > 2) throw new RangeError('riverCount must be 1 or 2');
   const occupied = new Set(land.map(key));
-  const qs = [...new Set(land.map(tile => tile.q))].sort((a, b) => a - b);
-  const cuts: Array<{ threshold: number; edges: MapRiverEdge[]; regions: Axial[][] }> = [];
-  for (const threshold of qs.slice(0, -1)) {
-    const edges: MapRiverEdge[] = [];
-    for (const tile of land) if (tile.q === threshold) {
-      for (const side of [0, 5] as const) if (occupied.has(key(neighbor(tile, side)))) edges.push({ tile: { q: tile.q, r: tile.r }, side });
-    }
-    if (edges.length === 0) continue;
-    const regions = connectedComponents(land, (tile, side) => edges.some(edge =>
-      (key(edge.tile) === key(tile) && edge.side === side) ||
-      (key(edge.tile) === key(neighbor(tile, side)) && edge.side === (side + 3) % 6)
-    ));
-    if (regions.length > 1) cuts.push({ threshold, edges, regions });
-  }
-  cuts.sort((a, b) =>
-    Math.abs(a.regions[0]!.length - a.regions[1]!.length) -
-    Math.abs(b.regions[0]!.length - b.regions[1]!.length) || a.threshold - b.threshold
-  );
-  const main=cuts[0]?.edges;
-  if(!main)throw new GenerationError('could not split continent with a river');
-  if(count===1)return main;
-
-  const vertexKey=(tile:Axial,corner:number)=>{
-    const offset=CORNER_OFFSETS[corner]!;
-    return `${2*tile.q+tile.r+offset[0]},${3*tile.r+offset[1]}`;
+  const vertexKey = (tile: Axial, corner: number) => {
+    const offset = CORNER_OFFSETS[corner]!;
+    return `${2 * tile.q + tile.r + offset[0]},${3 * tile.r + offset[1]}`;
   };
-  const edgeVertices=(edge:MapRiverEdge):[string,string]=>[
-    vertexKey(edge.tile,edge.side),vertexKey(edge.tile,(edge.side+1)%6)
-  ];
-  const mainKeys=new Set(main.map(edge=>edgeVertices(edge).sort().join('|')));
-  const mainDegrees=new Map<string,number>();
-  for(const edge of main)for(const vertex of edgeVertices(edge))mainDegrees.set(vertex,(mainDegrees.get(vertex)??0)+1);
-  const candidates:MapRiverEdge[]=[];
-  for(const tile of land)for(const side of [0,1,2] as const)if(occupied.has(key(neighbor(tile,side)))){
-    const edge={tile:{q:tile.q,r:tile.r},side};
-    if(!mainKeys.has(edgeVertices(edge).sort().join('|')))candidates.push(edge);
+  type Edge = { river: MapRiverEdge; id: string; vertices: [string, string] };
+  const vertexTiles = new Map<string, Set<string>>();
+  for (const tile of land) for (let corner = 0; corner < 6; corner++) {
+    const vertex = vertexKey(tile, corner), adjacentTiles = vertexTiles.get(vertex) ?? new Set<string>();
+    adjacentTiles.add(key(tile)); vertexTiles.set(vertex, adjacentTiles);
   }
-  const adjacentEdges=new Map<string,Array<{edge:MapRiverEdge;vertices:[string,string]}>>();
-  for(const edge of candidates)for(const vertex of edgeVertices(edge)){
-    const list=adjacentEdges.get(vertex)??[];list.push({edge,vertices:edgeVertices(edge)});adjacentEdges.set(vertex,list);
+  const boundaryVertices = new Set([...vertexTiles].filter(([, tiles]) => tiles.size < 3).map(([vertex]) => vertex));
+  const edges: Edge[] = [];
+  for (const tile of land) for (const side of [0, 1, 2] as const) {
+    const other = neighbor(tile, side);
+    if (!occupied.has(key(other))) continue;
+    const vertices: [string, string] = [vertexKey(tile, side), vertexKey(tile, (side + 1) % 6)];
+    edges.push({
+      river: { tile: { q: tile.q, r: tile.r }, side }, id: vertices.slice().sort().join('|'), vertices
+    });
   }
-  const mainVertices=new Set(main.flatMap(edge=>edgeVertices(edge)));
-  const starts=rng.shuffle([...mainDegrees].filter(([,degree])=>degree>=2).map(([vertex])=>vertex));
-  if(!starts.length)throw new GenerationError('main river has no vertex for a tributary');
-  for(let attempt=0;attempt<100;attempt++){
-    const start=starts[attempt%starts.length]!;
-    let current=start;
-    const path:MapRiverEdge[]=[],pathKeys=new Set<string>(),visitedVertices=new Set([start]);
-    while(path.length<5){
-      const options=(adjacentEdges.get(current)??[]).filter(candidate=>{
-        const edgeKey=candidate.vertices.slice().sort().join('|');
-        const next=candidate.vertices[0]===current?candidate.vertices[1]:candidate.vertices[0];
-        return !pathKeys.has(edgeKey)&&!visitedVertices.has(next)&&!mainVertices.has(next);
+  const adjacent = new Map<string, Edge[]>();
+  for (const edge of edges) for (const vertex of edge.vertices) {
+    const list = adjacent.get(vertex) ?? []; list.push(edge); adjacent.set(vertex, list);
+  }
+  const point = (vertex: string): [number, number] => vertex.split(',').map(Number) as [number, number];
+  const unit = (vector: [number, number]): [number, number] => {
+    const length = Math.hypot(vector[0], vector[1]) || 1;
+    return [vector[0] / length, vector[1] / length];
+  };
+  const walk = (start: Edge, forbidden: Set<string>, minLength: number, maxLength: number, startAt?: string): Edge[] | null => {
+    const origin = startAt ?? rng.pick(start.vertices), first = origin === start.vertices[0] ? start.vertices[1] : start.vertices[0];
+    const path = [start], used = new Set([start.id]), visited = new Set([origin, first]);
+    let attempts = 0;
+    const search = (current: string, direction: [number, number]): Edge[] | null => {
+      if (path.length >= maxLength || attempts++ > 100000) return null;
+      const options = (adjacent.get(current) ?? []).filter(edge => {
+        const next = edge.vertices[0] === current ? edge.vertices[1] : edge.vertices[0];
+        return !used.has(edge.id) && !visited.has(next) && !forbidden.has(next);
+      }).map(edge => {
+        const next = edge.vertices[0] === current ? edge.vertices[1] : edge.vertices[0];
+        const from = point(current), to = point(next), nextDirection = unit([to[0] - from[0], to[1] - from[1]]);
+        const persistence = direction[0] * nextDirection[0] + direction[1] * nextDirection[1];
+        return { edge, next, nextDirection, persistence };
       });
-      if(!options.length)break;
-      const chosen=rng.pick(options),edgeKey=chosen.vertices.slice().sort().join('|');
-      path.push(chosen.edge);pathKeys.add(edgeKey);
-      current=chosen.vertices[0]===current?chosen.vertices[1]:chosen.vertices[0];visitedVertices.add(current);
-      if(path.length>=3)break;
-    }
-    if(path.length>=3)return [...main,...path];
+      const ordered = rng.shuffle(options).sort((a, b) => b.persistence - a.persistence);
+      for (const choice of ordered) {
+        path.push(choice.edge);
+        if (boundaryVertices.has(choice.next) && path.length >= minLength) return [...path];
+        used.add(choice.edge.id); visited.add(choice.next);
+        const found = search(choice.next, choice.nextDirection);
+        if (found) return found;
+        visited.delete(choice.next); used.delete(choice.edge.id); path.pop();
+      }
+      return null;
+    };
+    const firstDirection = unit([point(first)[0] - point(origin)[0], point(first)[1] - point(origin)[1]]);
+    return search(first, firstDirection);
+  };
+  const starts = rng.shuffle(edges.flatMap(edge => edge.vertices.filter(vertex => boundaryVertices.has(vertex)).map(startAt => ({ edge, startAt }))));
+  let main: Edge[] | null = null;
+  const maximum = Math.max(12, Math.min(land.length, Math.ceil(Math.sqrt(land.length) * 3.5)));
+  for (const { edge, startAt } of starts) {
+    main = walk(edge, new Set(), 2, maximum, startAt);
+    if (main) break;
   }
-  throw new GenerationError('could not grow a tributary from the main river');
-}
+  if (!main) throw new GenerationError('could not generate a continuous river from coastline to coastline');
+  if (count === 1) return main.map(edge => edge.river);
 
+  const mainVertices = new Set(main.flatMap(edge => edge.vertices));
+  const junctions = rng.shuffle([...mainVertices].filter(vertex => (adjacent.get(vertex) ?? []).length > 2));
+  let fallbackBranch: Edge | undefined;
+  for (const junction of junctions) {
+    const startsAtJunction = rng.shuffle((adjacent.get(junction) ?? []).filter(edge => !main!.some(part => part.id === edge.id)));
+    for (const start of startsAtJunction) {
+      fallbackBranch ??= start;
+      const forbidden = new Set([...mainVertices].filter(vertex => vertex !== junction));
+      const branch = walk(start, forbidden, 3, 7, junction);
+      if (branch) return [...main, ...branch].map(edge => edge.river);
+    }
+  }
+  if (fallbackBranch) return [...main, fallbackBranch].map(edge => edge.river);
+  throw new GenerationError('could not grow a continuous river tributary');
+}
 function makeLakes(target: number, lakeCount: number, rng: Rng): { land: Axial[]; water: Axial[] } {
   for (let extra = 4; extra <= 34; extra += 2) {
     const initial = makeContinent(target + lakeCount + extra, rng, 0.85);
@@ -274,8 +329,12 @@ export function generateTerrain(style: TerrainStyle, options: TerrainOptions, rn
     const terrain = makeAtoll(target, radius, rng);
     return result(terrain.land, terrain.water);
   }
-  const compactness = options.compactness ?? (style === 'random' ? rng.float() : 0.55 + rng.float() * 0.3);
+  if (style === 'irregular') {
+    if (target < 50 || target > 80) throw new RangeError('irregular landTarget must be from 50 to 80');
+    return result(makeIrregularLand(target, rng));
+  }
+  if (style === 'random') return result(makeRandomLand(target, rng));
+  const compactness = options.compactness ?? 0.55 + rng.float() * 0.3;
   if (!Number.isFinite(compactness) || compactness < 0 || compactness > 1) throw new RangeError('compactness must be from 0 to 1');
-  if (style === 'irregular' && (target < 50 || target > 80)) throw new RangeError('irregular landTarget must be from 50 to 80');
   return result(makeContinent(target, rng, compactness));
 }

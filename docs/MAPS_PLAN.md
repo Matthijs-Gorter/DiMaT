@@ -9,6 +9,14 @@ This file **amends** `docs/MAP_GENERATOR_PLAN.md`. Where the two disagree, this 
 - Steps F through I are implemented for the current 3–4-player base game: stored map definitions and scaled banks in engine settings; persistent map records with six-character share codes and room replay copies; lobby picker/preview; generation and editing UI with live validation and save.
 - Step J is implemented: 200-seed generation matrices, bridge/map tests, map-settings replay coverage, an end-to-end editor/share/room flow, and an eight-style random-bot matrix are green. Workspace typecheck, lint, tests, and the 1,000-game baseline simulation are green.
 
+## 2026-11-03 editor and generation follow-up
+
+- The browser editor and lobby preview now share the in-game terrain image renderer. The editor has independent number/label visibility toggles, blank-map creation, add/remove/change tile tools, coast-aware harbor editing, connected river-edge editing, validation, and a live quality panel.
+- The eight shapes have separate implementations: compact standard, continent growth, separated island growth centers, edge-river carving, lake insertion, atoll ring growth, erosion, and seeded random polyhex growth. This algorithm change is generator version 2.
+- Random mode varies resource counts while retaining all resource types and the scaled desert count. The 6/8 adjacency preference is configurable. The built-in `BEGINR` map is fixed hand-authored data.
+- Quality is advisory and based on legal two-settlement pairs, pip-weighted expected production, balance between each pair's two settlements, diversity, resource counts, and outlier warnings. Its equal-weight composite is an explicit heuristic assumption in `DECISIONS.md`.
+- Re-run verification after generator version 2; previous green claims above describe the earlier implementation and are not evidence for this follow-up.
+
 ## 1. Owner decisions (from the Q&A on 2026-11-03)
 
 1. **Map kinds** the generator must produce: islands with a river, a very large map with irregular shapes, the classic compact map, and a fully random (seeded) map.

@@ -105,3 +105,26 @@ Detailed, app-specific record of requests, implementation work, tests, simulator
 - **Fixed (tile rendering, from my earlier change):** removed the per-tile `clipPath` (the tile PNGs are already hexagonal and `e2e` guards against clipPath), restored the stable top-to-bottom DOM order of tiles, and kept the road `stroke-width` literal `.2`. Tile spacing is unchanged (art scaled by `TILE_INSET_RATIO`, gap = road width).
 - **Fixed (test infra):** `packages/maps/test/generate.test.ts` ran 75 s of synchronous work, which starved vitest's worker RPC and made `pnpm -r test` exit 1 although every test passed. Now one test per style with an event-loop yield.
 - **Known, pre-existing:** 7 tests in `e2e/board-and-lifecycle.spec.ts` fail identically on commit `a882f2f` (before any of this work): lobby `GAME_NOT_STARTED` message, desktop layout, two-human setup, domestic trade (3 tests) and named seats. Not investigated.
+
+## 2026-11-03 — Map editor and generator quality follow-up
+
+- **Request:** Complete the map-editor and generation improvements from the supplied specification: actual terrain assets, functional map editing, distinct generation modes, meaningful quality evaluation, random-mode controls, a fixed beginner map, and deterministic regression coverage.
+- **Changes:** Shared the terrain image and harbor-position rendering between game, editor, and lobby preview. Added independent number/label toggles; blank map creation; add/remove/change tile tools; coast-only, collision-aware harbor placement and editing; connected river editing that rejects segments which create regions below three tiles; live validation and starting-pair quality breakdown. Added seeded irregular erosion and random polyhex growth, revised archipelago distribution and river pathfinding, random resource counts with configurable 6/8 adjacency, fixed `BEGINR` beginner data, generator version 2 and per-style representative seed snapshots. Engine map validation now respects the saved red-token preference. Updated the map workflow E2E and Playwright server launch for the Node TS loader.
+- **Verification:** Frozen-lockfile install, workspace typecheck, lint and all Vitest suites passed. The required 1,000-game legacy simulation passed (718,355 actions); the eight-style random-bot matrix passed (8 games, 5,855 actions). Focused map editor E2E passed, including scratch-map add/delete, harbor placement/editing, tile display toggles, terrain change, river extension, save/share, lobby preview and board rendering. Generation tests cover 200 seeds per style and 200 seeds at each supported player count.
+- **Known gaps:** The full browser suite still has previously documented failures in `e2e/board-and-lifecycle.spec.ts` (lobby action rejection text, desktop layout, and two-human setup); the focused map workflow passes. Map quality's equal-weight composite is explicitly heuristic and advisory. The simulator matrix uses one full game per map style in this verification pass.
+
+## 2026-11-03 — Map JSON file import and export
+
+- **Request:** Map JSON files could not be saved from the editor.
+- **Finding:** The existing save action persisted maps to SQLite and returned a share code, but there was no browser file download or JSON import action.
+- **Changes:** Added a local `.json` download and schema-checked file import. Imported maps with gameplay validation errors remain editable and show their errors; they cannot be saved to the server until corrected. The existing server/share-code save flow remains available.
+- **Verification:** Typecheck and lint passed; the map workflow E2E passed through JSON download, reimport, server save, share-code preview, and game-board rendering.
+- **Follow-up:** Replaced direct `Response.json()` calls on map load/save/preview with explicit body parsing and HTTP diagnostics. Empty or non-JSON responses now show the status and operation in the editor. Added regression coverage for empty/non-JSON API responses and for saving/reloading the standard generated map.
+- **Follow-up verification:** Workspace typecheck, lint and tests passed; both map workflow E2E cases passed, including standard-map save and reload.
+
+## 2026-11-03 — Bot discard scheduling after a seven
+
+- **Request:** A game with bots stopped before the user could move the robber.
+- **Finding:** A seven put the game into `discard`, but the bot scheduler chose only the active turn player. When that player was human and a bot was first in the pending-discard queue, the scheduler stopped and never reached the robber phase.
+- **Changes:** The server now schedules the first pending discarder during the discard phase and the active player during other phases. Saved active rooms resume using the same corrected scheduler after a server restart.
+- **Verification:** Added server regression tests for discard ordering and actor selection. Workspace typecheck, lint, all tests, and the eight-style bot simulation passed (8 games, 5,855 actions).

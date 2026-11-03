@@ -26,6 +26,12 @@
 - **ASSUMPTION — bank supply for map games:** Each base resource starts with a bank supply equal to the map's land-tile count. The legacy 19-tile board therefore retains its existing supply of 19 per resource.
 - Engine map settings store the complete validated `MapDefinition` so action-log replay does not depend on future generator versions.
 
+## 2026-11-03 — Map editor and quality model
+- **ASSUMPTION — map quality score:** The editor's 0–100 composite weights balance between the two settlements, start-pair production fairness, resource diversity, and resource-count similarity equally. It is an advisory heuristic; structural game-rule violations still block saving, while a low quality score alone does not.
+- **ASSUMPTION — random resource mode:** `random` maps contain the scaled desert count and at least one of each base resource, then seed-select the remaining resources. Their resource counts may differ from the standard inventory; red-token adjacency is off by default but can be enabled.
+- The fixed beginner board is hand-authored data (`BEGINR`) and is served as a built-in map; game rooms copy its full definition so it is independent of later generator versions.
+- Generator algorithm changes are tracked by `GENERATOR_VERSION`; schema version remains separate. Existing saved definitions load as data and are not regenerated.
+
 ## 2026-10-29 — Phase 2.1 root-cause findings
 
 - **Lobby actions / `GAME_NOT_STARTED`:** The server sent a full `PlayerView` (including legal actions) as soon as a seat joined, while the room remained in `lobby`. The client rendered the action picker before the host started the game and sent those actions without a `gameStarted` acknowledgement. The server returned an unstructured string error, which the client appended to the event list. The old sidebar also had a second, unguarded Start button. The lifecycle is now explicit (`lobby`, `started`, `finished`); the lobby receives no game view, the client gates actions on the `gameStarted` message, and rejected requests carry stable error codes.
@@ -38,9 +44,10 @@
 - **Lifecycle policy:** Rooms require both human seats before the host starts. Bot seats never submit client messages. A resumed room is considered started when its persisted lifecycle says `started`; legacy rows with actions but no lifecycle are migrated as started.
 - **Bot recovery policy:** On worker timeout/error, take one deterministic random legal action from that bot's own view. If no legal action exists or the fallback fails, mark the bot stalled with a reason and log it instead of silently waiting.
 
-## 2026-10-31 — Human and bot room sizes
+## 2026-11-03 — Human and bot room sizes
 
-- **ASSUMPTION — total seat limit:** Room setup selects one to four human seats and a bot count, but keeps the base engine's supported total at three or four players. Therefore a solo human needs two or three bots, two humans need one or two bots, three humans may choose zero or one bot, and four humans play without bots. Supporting two total players or four bots plus a human would require changing the base-game player-count rules and engine.
+- **USER REQUIREMENT — total seat limit:** Room setup accepts one to eight human seats and zero to seven bots, with two to eight total participants. The server validates this independently. The engine uses its existing setup and turn order for every supported count; specialized 5–6 player expansion rules remain unimplemented and require rulebook verification before claiming expansion compatibility.
+- **ASSUMPTION — map player metadata:** A map's `players.min/max` describes its declared intended range, while actual game creation validates legal starting positions for the requested room size. This lets a map preset serve different room sizes without silently changing the requested participants.
 
 ## 2026-10-29 — Phase 2.1 Part B: board geometry and direct placement
 

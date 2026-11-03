@@ -94,7 +94,7 @@ function isAdjacentToRed(tiles: readonly MapTile[], candidate: MapTile, ignoredK
   return false;
 }
 
-export function assignNumbers(tiles: readonly MapTile[], rng: Rng): MapTile[] {
+export function assignNumbers(tiles: readonly MapTile[], rng: Rng, avoidAdjacentRed = true): MapTile[] {
   const resources = resourceTiles(tiles);
   const tokenPool = scaleTokens(resources.length);
   const fixed = resources.filter(tile => tile.fixedNumber);
@@ -114,6 +114,7 @@ export function assignNumbers(tiles: readonly MapTile[], rng: Rng): MapTile[] {
       if (!(RESOURCES as readonly string[]).includes(tile.kind)) return { ...tile, number: null };
       return tile.fixedNumber ? { ...tile } : { ...tile, number: shuffled[tokenIndex++]! };
     });
+    if (!avoidAdjacentRed) return numbered;
     for (let repair = 0; repair < resources.length; repair++) {
       const conflict = redAdjacencyPair(numbered);
       if (!conflict) return numbered;

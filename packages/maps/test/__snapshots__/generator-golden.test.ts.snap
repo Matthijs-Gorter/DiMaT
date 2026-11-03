@@ -1,0 +1,14 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`generator version 2 representative seeds > pins a generated map signature for every style 1`] = `
+{
+  "archipelago": "949a4fbd",
+  "atoll": "86deebbb",
+  "continent": "65f48fde",
+  "irregular": "2ae95203",
+  "lakes": "3e72b4b0",
+  "random": "66394408",
+  "river": "ed41ff6d",
+  "standard": "22f66bf4",
+}
+`;

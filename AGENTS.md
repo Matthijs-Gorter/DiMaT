@@ -25,9 +25,34 @@ packages/maps      map definitions (data), generators, validators
 packages/protocol  message types + Zod schemas shared by server and web
 packages/bots      bot players (run in worker threads), only see their own player view
 apps/server        rooms, seats, WebSocket, persistence (event log)
-apps/web           React client
+apps/web           Vite client; current implementation is DOM/SVG TypeScript (React was the original target)
 docs/              RULES.md, PHASES.md, DECISIONS.md, OPEN_QUESTIONS.md
 ```
+
+## Current repository state (2026-11-03)
+
+- Phase 0, the base-game engine (Phase 1), online-play foundation, and the map-system work recorded in `docs/PROJECT_LOG.md` are implemented. Phase 2 has substantial follow-up work (2.1 A–E plus consent-based domestic trading); acceptance criteria should still be checked against current verification. Do not infer completion from code presence alone.
+- The base rules engine and map-backed games currently support 3–4 players. `packages/maps` now contains deterministic generators, balancing, schemas, board construction, validation, and custom-map handling. The type schema reserves a `preset` selection kind, but there is no preset library or picker yet. The generated terrain styles are `standard`, `continent`, `archipelago`, `river`, `lakes`, `atoll`, `irregular`, and `random`; `base` and `custom` are additional map selection kinds. Maps with separated islands require ships that are deferred to Seafarers. 5–8 player map generation described in planning/code does not mean the game engine supports those player counts.
+- River features are edge-based and crossable with bridges. Bridge cost and per-player supply are house-rule assumptions; preserve the recorded choices in `docs/DECISIONS.md` unless explicitly changed.
+- The server persists shared custom maps in SQLite under share codes and stores the full map definition in room replay settings. The lobby has map preview/selection, and the web client includes a map generator/editor with validation and save. Relevant files include `apps/web/src/map-editor.ts`, `e2e/map-workflow.spec.ts`, and `packages/protocol/src/index.ts`.
+- The web app currently uses TypeScript, Vite, DOM APIs, and hand-built SVG/CSS (`apps/web/src/main.ts`); it does not use React despite the original stack plan and the older `docs/ARCHITECTURE.md` wording. The server uses Node's built-in `node:sqlite` and `worker_threads`; account for the Node 22 runtime requirement.
+- Consent-based domestic trade offers, multi-resource bundles, decline/cancel, and one-level counters are implemented as project assumptions. See `docs/DECISIONS.md`; do not silently reinterpret them. Old immediate `domesticTrade` actions remain replay-compatible, while the live server rejects them.
+- Latest project-log verification reports a passing `pnpm sim --games 1000 --seed 1` (1,000 games, 718,355 actions), passing workspace typecheck/lint/tests, map style bot matrix (one game per style), and map workflow E2E. Treat these as historical reports, not current-task checks. The Phase 1 10,000-game run remains incomplete; the 20-games-per-style/player map matrix and 3–8 player engine support are not reported as completed.
+- `docs/PROJECT_LOG.md` is the dated implementation/verification record, `docs/DECISIONS.md` is the rule and architecture assumption record, `docs/OPEN_QUESTIONS.md` is the unresolved list, and `docs/RULES_MATRIX.md` maps rules to named tests. `docs/MAPS_PLAN.md` is the current map plan and amends the older `docs/MAP_GENERATOR_PLAN.md`. Keep these consistent when work changes status; append a dated log entry for substantive work and correct stale known-gap notes when resolved.
+
+## Source-of-truth reading order
+
+Before implementation, read this file, `docs/RULES.md`, and the relevant prompt in `docs/PHASES.md` or `docs/MAPS_PLAN.md`. Then check `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, `docs/OPEN_QUESTIONS.md`, `docs/RULES_MATRIX.md`, and the latest relevant entries in `docs/PROJECT_LOG.md`. The plans are intended scope; inspect current code and tests to establish actual behavior. Do not infer that planned features are implemented. Where older plans/docs conflict with `MAPS_PLAN.md` or current code, read the dated decision and project log before changing behavior.
+
+Useful entry points:
+
+- Engine API and state transitions: `packages/engine/src/index.ts`, `game.ts`, `types.ts`, `board.ts`.
+- Map schemas, deterministic generators, balancing and validators: `packages/maps/src/`; map-system decisions and delivery plan: `docs/MAPS_PLAN.md`.
+- Bot policies and worker entry: `packages/bots/src/`.
+- Wire schemas and server message types: `packages/protocol/src/index.ts`.
+- Rooms, WebSockets, SQLite replay persistence, and bot scheduling: `apps/server/src/index.ts`.
+- Browser UI and SVG interaction: `apps/web/src/main.ts`; map editor: `apps/web/src/map-editor.ts`; visual styles are in `apps/web/src/*.css`.
+- Full-game simulator: `scripts/sim.ts` (`pnpm sim --games N --seed S`; map-style matrix options are documented in `README.md`); browser checks: `e2e/`.
 
 ## Commands (all must pass before you finish a task)
 
@@ -59,6 +84,7 @@ If a command does not exist yet, create it as part of the task rather than skipp
 - **Do not stop to ask** when something is ambiguous (you may be running unattended). Pick the most conservative reading, record it in `docs/DECISIONS.md` with the alternatives, add the question to `docs/OPEN_QUESTIONS.md`, and continue. Items marked `VERIFY` in `docs/RULES.md` always go to `OPEN_QUESTIONS.md` unless you can confirm them from an official source.
 - Small, reviewable commits. Do not rewrite unrelated files. Do not change an agreed rule silently; log it in `DECISIONS.md`.
 - No placeholders, no TODO stubs in finished work. If something is out of scope, say so in the final report.
+- When a new request is underspecified, inspect the repository and continue with the narrowest reasonable interpretation; update docs if an assumption or status changes. Keep user-facing replies in Dutch and repository text/code in English.
 
 ## References and licenses
 
@@ -73,3 +99,5 @@ If a command does not exist yet, create it as part of the task rather than skipp
 - New rules have tests and a row in `docs/RULES_MATRIX.md`.
 - Run instructions for Fedora are current in `README.md`.
 - Final message (in Dutch): what works, what is tested, what is incomplete, assumptions made, open questions. No long recap of the steps.
+
+`pnpm -r typecheck`, `pnpm -r lint`, `pnpm -r test`, and the simulator are required for implementation tasks by project policy. Do not claim they passed unless run in the current task; report unavailable or incomplete checks explicitly. `pnpm e2e` is available for browser checks when the change affects online play or the UI.

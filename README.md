@@ -21,13 +21,13 @@ Install dependencies, then run the server and web client in separate terminals:
     pnpm --filter @dimat/server dev
     pnpm --filter @dimat/web dev
 
-Open the Vite URL (normally `http://localhost:5173`). Choose the number of human seats and bots when creating a room, then share its invite URL so the selected humans can join before the host starts. Base games have three or four total seats, so solo games need two or three bots and rooms with four humans cannot add bots. The game server listens on port 3000 and keeps SQLite action logs in `dimat.sqlite` (override with `DIMAT_DB`). Seat tokens are stored by the browser for reconnect. For a container deployment, review `compose.yaml`, then run `docker compose up --build`; the web entry point is port 8080. The example systemd unit and Tailscale/firewall notes are in `deploy/README.md`.
+Open the Vite URL (normally `http://localhost:5173`). Choose one to eight human seats and zero to seven bots, with two to eight participants total. The host is the first human seat; other humans join from the invite URL before the game starts. From the map editor, generate and inspect a map, configure the same human/bot counts, then use **Start spel** to create a room with that exact map. Bots are server-managed participants. The game server listens on port 3000 and keeps SQLite action logs in `dimat.sqlite` (override with `DIMAT_DB`). Seat tokens are stored by the browser for reconnect. For a container deployment, review `compose.yaml`, then run `docker compose up --build`; the web entry point is port 8080. The example systemd unit and Tailscale/firewall notes are in `deploy/README.md`.
 
 In the build phase, the active player can use **Ruilen** to offer resource bundles to selected players. Recipients can accept, decline, or make one counter-offer; bots respond to offers directed to them. Bank and harbor trades remain immediate. Domestic-trade bundle, consent, and counter-offer details are project assumptions documented in `docs/DECISIONS.md`.
 
 ### Maps
 
-The lobby accepts a six-character map code and displays a preview before room creation. Use **Map genereren of bewerken** to open the editor: generate seeded styles, adjust terrain/numbers/rivers/harbors, review validation, and save the complete map for a share code. A room stores the full map definition in its replay settings. The map API is `POST /api/maps` and `GET /api/maps/<code>`.
+The lobby accepts a six-character map code and displays a preview before room creation; `BEGINR` selects the fixed Beginnerskaart. Use **Map genereren of bewerken** to open the editor: generate one of eight seeded terrain styles, start from a blank map, add/remove/change tiles, edit coast harbors and connected river edges, and review validation plus advisory starting-position quality. Number tokens and terrain labels have independent visibility toggles. **Download JSON** exports a local `.json` copy, and **Importeer JSON** reloads a map file for continued editing. **Opslaan en deelcode maken** stores it on the server for sharing; a room stores the full definition in replay settings. Generator changes increment `GENERATOR_VERSION` while saved map definitions remain loadable. The map API is `POST /api/maps` and `GET /api/maps/<code>`.
 
 ### Local debug mode
 
@@ -41,4 +41,4 @@ Server logs are structured JSON through Fastify/Pino and include room/seat/actio
 
 ## Project structure
 
-See docs/ARCHITECTURE.md, docs/RULES.md, and docs/PHASES.md. Read AGENTS.md before coding. Phase 1 implements the deterministic 3–4 player base-game engine, private player views, replay, random bot, and simulator.
+See docs/ARCHITECTURE.md, docs/RULES.md, and docs/PHASES.md. Read AGENTS.md before coding. The deterministic base-game engine supports two to eight total seats with private player views, replay, random bots, and the simulator.

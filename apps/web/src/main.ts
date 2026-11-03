@@ -1,8 +1,10 @@
 import type { GameAction, GameEvent, PlayerView, Resource } from '@dimat/engine';
 import type { BotStatus, RoomLifecycle, ServerMessage } from '@dimat/protocol';
-import { cornerPoint, type MapDefinition } from '@dimat/maps';
+import { BEGINNER_MAP_CODE, cornerPoint, mapTileCenter, type MapDefinition, type MapTileKind } from '@dimat/maps';
 import { findLegalDiscardAction } from './discard-action.js';
 import { mountMapEditor } from './map-editor.js';
+import { createTerrainTileVisual, mapHarborCenter } from './terrain-rendering.js';
+import { readApiJson } from './api-json.js';
 import './style.css';
 import './game-ui.css';
 
@@ -13,32 +15,7 @@ const SVG_NS='http://www.w3.org/2000/svg';
 const COLORS=['#37a9d2','#e16c59','#e2b941','#7b68c6'];
 const PIPS:Record<number,number>={2:1,3:2,4:3,5:4,6:5,8:5,9:4,10:3,11:2,12:1};
 const RESOURCE_ICON:Record<'brick'|'lumber'|'wool'|'grain'|'ore',string>={brick:'▦',lumber:'♣',wool:'❖',grain:'✳',ore:'⬡'};
-const TILE_ASSETS:Record<Resource|'desert',string>={
-  brick:'brick.png',
-  lumber:'hout.png',
-  wool:'schaap.png',
-  grain:'graan.png',
-  ore:'erts.png',
-  desert:'woestijn.png'
-};
-// Measured opaque hexagon inside the 1225x1311 tile PNGs (pointy-top, flat, no side wall).
-const TILE_ART_BOUNDS={canvasWidth:1225,canvasHeight:1311,x:47,y:1,width:1132,height:1309};
-const HEX_PITCH=2*Math.sqrt(3);
-// Roads are drawn centered on tile edges, so tiles are inset by half a road width per side:
-// the gap between two neighbouring tiles is then exactly one road wide. Keep in sync with .road-piece in style.css.
 const ROAD_STROKE='.2';
-const ROAD_WIDTH=Number(ROAD_STROKE);
-const TILE_GAP=ROAD_WIDTH;
-const TILE_INSET_RATIO=(HEX_PITCH/2-TILE_GAP/2)/(HEX_PITCH/2);
-function terrainArtBox(cx:number,cy:number){
-  const art=TILE_ART_BOUNDS,scale=HEX_PITCH*TILE_INSET_RATIO/art.width;
-  return {
-    x:cx-(art.x+art.width/2)*scale,
-    y:cy-(art.y+art.height/2)*scale,
-    width:art.canvasWidth*scale,
-    height:art.canvasHeight*scale
-  };
-}
 const HARBOR_MARKER_SIZE=.9;
 const HARBOR_OFFSET=1.1;
 const root=document.querySelector<HTMLDivElement>('#app')!;
@@ -185,25 +162,26 @@ function errorText(code:string,message:string){
 }
 function shell(){
   root.replaceChildren();const header=element('header','top');
-  header.append(element('strong','brand','DiMaT'),element('span',`connection-indicator state-${connectionState}`,`Browser board game · ${roomId?connectionState:'offline'}`));
+  const connectionLabel=({connected:'Verbonden',connecting:'Verbinden…',disconnected:'Verbinding verbroken'} as Record<string,string>)[connectionState]??connectionState;
+  header.append(element('strong','brand','DiMaT'),element('span',`connection-indicator state-${roomId?connectionState:'disconnected'}`,roomId?connectionLabel:'Offline'));
   const theme=element('button','','Licht/donker');theme.onclick=()=>{const next=document.documentElement.dataset.theme==='light'?'dark':'light';document.documentElement.dataset.theme=next;localStorage.setItem('dimat-theme',next);};
   const debug=element('button',debugEnabled?'selected':'','Debug');debug.setAttribute('aria-pressed',String(debugEnabled));debug.onclick=()=>{debugEnabled=!debugEnabled;const url=new URL(location.href);if(debugEnabled)url.searchParams.set('debug','1');else url.searchParams.delete('debug');history.replaceState({},'',url);render();void refreshDebugData();};
   header.append(theme,debug);root.append(header);const main=element('main');root.append(main);return main;
 }
 function showMapPreview(host:HTMLElement,map:MapDefinition){
-  const svg=svgElement('svg'),colors:Record<string,string>={brick:'#b86550',lumber:'#4f8d59',wool:'#a7c77b',grain:'#e2bc55',ore:'#74828b',desert:'#d9b880',water:'#468fb5',gold:'#e9cf56',fog:'#99a5ad'};
+  const svg=svgElement('svg');
   const point=(q:number,r:number,corner:number):[number,number]=>{const [x,y]=cornerPoint(q,r,corner);return [x*Math.sqrt(3),y];};
   const vertices=map.tiles.flatMap(tile=>Array.from({length:6},(_,corner)=>point(tile.q,tile.r,corner)));
   const xs=vertices.map(([x])=>x),ys=vertices.map(([,y])=>y),left=Math.min(...xs)-.5,top=Math.min(...ys)-.5,width=Math.max(...xs)-Math.min(...xs)+1,height=Math.max(...ys)-Math.min(...ys)+1;
   svg.setAttribute('viewBox',`${left} ${top} ${width} ${height}`);svg.setAttribute('role','img');svg.setAttribute('aria-label',`Voorbeeld van map ${map.name}`);svg.classList.add('map-preview-board');
   for(const tile of map.tiles){
-    const polygon=svgElement('polygon'),corners=Array.from({length:6},(_,corner)=>point(tile.q,tile.r,corner));
-    polygon.setAttribute('points',corners.map(([x,y])=>`${x},${y}`).join(' '));polygon.setAttribute('fill',colors[tile.kind]??'#888');polygon.setAttribute('stroke','#17232b');polygon.setAttribute('stroke-width','.08');svg.append(polygon);
+    const [x,y]=mapTileCenter(tile.q,tile.r);svg.append(createTerrainTileVisual(tile.kind,x,y,tile.number,{showNumber:true,outline:true}));
   }
   for(const river of map.rivers){
     const a=point(river.tile.q,river.tile.r,river.side),b=point(river.tile.q,river.tile.r,(river.side+1)%6),line=svgElement('line');
-    line.setAttribute('x1',String(a[0]));line.setAttribute('y1',String(a[1]));line.setAttribute('x2',String(b[0]));line.setAttribute('y2',String(b[1]));line.setAttribute('stroke','#b7edff');line.setAttribute('stroke-width','.16');svg.append(line);
+    line.setAttribute('x1',String(a[0]));line.setAttribute('y1',String(a[1]));line.setAttribute('x2',String(b[0]));line.setAttribute('y2',String(b[1]));line.setAttribute('stroke','#b7edff');line.setAttribute('stroke-width','.18');line.setAttribute('stroke-linecap','round');svg.append(line);
   }
+  for(const harbor of map.harbors){const [x,y]=mapHarborCenter(harbor.tile.q,harbor.tile.r,harbor.side),marker=svgElement('g');marker.setAttribute('class','map-preview-harbor');const circle=svgElement('circle');circle.setAttribute('cx',String(x));circle.setAttribute('cy',String(y));circle.setAttribute('r','.3');circle.setAttribute('class','map-harbor-marker');const label=svgElement('text');label.setAttribute('x',String(x));label.setAttribute('y',String(y+.1));label.setAttribute('text-anchor','middle');label.textContent=harbor.kind==='generic'?'3:1':`2:1 ${harbor.kind[0]?.toUpperCase()??''}`;marker.append(circle,label);svg.append(marker);}
   host.replaceChildren(svg);
 }
 function lobby(message='Maak een kamer of gebruik een uitnodigingslink.'){
@@ -215,36 +193,54 @@ function lobby(message='Maak een kamer of gebruik een uitnodigingslink.'){
   const mapPreview=element('div','map-preview');
   let selectedMapCode='';
   const previewButton=element('button','gx-btn','Map bekijken');previewButton.type='button';
-  mapRow.append(mapCodeInput,previewButton);card.append(mapRow,mapStatus,mapPreview);
+  const beginnerButton=element('button','gx-btn','Beginnerskaart bekijken');beginnerButton.type='button';beginnerButton.title='Vaste, handgemaakte kaart met een toegankelijke startverdeling.';
+  mapRow.append(mapCodeInput,previewButton,beginnerButton);card.append(mapRow,mapStatus,mapPreview);
   mapCodeInput.addEventListener('input',()=>{selectedMapCode='';mapPreview.replaceChildren();mapStatus.textContent=mapCodeInput.value?'Klik op Map bekijken om de kaart op te halen.':'Zonder mapcode wordt het standaardbord gebruikt.';});
   previewButton.onclick=async()=>{
-    const code=mapCodeInput.value.trim().toUpperCase();mapStatus.textContent='Map ophalen…';previewButton.disabled=true;
+    const code=mapCodeInput.value.trim().toUpperCase();await previewCode(code,previewButton);
+  };
+  beginnerButton.onclick=async()=>{mapCodeInput.value=BEGINNER_MAP_CODE;await previewCode(BEGINNER_MAP_CODE,beginnerButton);};
+  async function previewCode(code:string,button:HTMLButtonElement){mapStatus.textContent='Map ophalen…';button.disabled=true;
     try{
-      const response=await fetch(`/api/maps/${encodeURIComponent(code)}`),data=await response.json();
+      const response=await fetch(`/api/maps/${encodeURIComponent(code)}`),data=await readApiJson<{map:MapDefinition;message?:string}>(response,'Kaartvoorbeeld laden');
       if(!response.ok)throw new Error(data.message??'Map kon niet worden geladen.');
       selectedMapCode=code;showMapPreview(mapPreview,data.map as MapDefinition);
       const map=data.map as MapDefinition,landCount=map.tiles.filter(tile=>tile.kind!=='water').length;
       mapStatus.textContent=`${map.name} · ${map.style} · ${landCount} landtegels · ${map.players.min}–${map.players.max} spelers`;
     }catch(error){selectedMapCode='';mapPreview.replaceChildren();mapStatus.textContent=error instanceof Error?error.message:'Map kon niet worden geladen.';}
-    finally{previewButton.disabled=false;}
-  };
+    finally{button.disabled=false;}
+  }
   const humanCountSelect=element('select'),botCountSelect=element('select'),options=element('div','create-options'),summary=element('p','muted create-summary');
   humanCountSelect.setAttribute('aria-label','Aantal menselijke spelers');
   botCountSelect.setAttribute('aria-label','Aantal bots');
-  for(const count of [1,2,3,4])humanCountSelect.append(new Option(String(count),String(count)));
+  for(let count=1;count<=8;count++)humanCountSelect.append(new Option(String(count),String(count)));
+  for(let count=0;count<=7;count++)botCountSelect.append(new Option(String(count),String(count)));
   humanCountSelect.value='2';
-  const humanLabel=element('label','','Menselijke spelers');humanLabel.append(humanCountSelect);
-  const botLabel=element('label','','Bots');botLabel.append(botCountSelect);
-  options.append(humanLabel,botLabel);
+  botCountSelect.value='1';
+  const stepper=(label:string,select:HTMLSelectElement)=>{
+    const field=element('div','create-stepper'),caption=element('span','create-stepper-label',label),controls=element('div','create-stepper-controls');
+    const minus=element('button','create-stepper-button','−'),plus=element('button','create-stepper-button','+');
+    minus.type='button';plus.type='button';minus.setAttribute('aria-label',`Minder ${label.toLowerCase()}`);plus.setAttribute('aria-label',`Meer ${label.toLowerCase()}`);
+    select.classList.add('create-stepper-native');select.setAttribute('aria-label',select.getAttribute('aria-label')??label);
+    const refresh=()=>{minus.disabled=select.selectedIndex<=0;plus.disabled=select.selectedIndex>=select.options.length-1;};
+    minus.onclick=()=>{if(select.selectedIndex>0){select.selectedIndex--;select.dispatchEvent(new Event('change'));refresh();}};
+    plus.onclick=()=>{if(select.selectedIndex<select.options.length-1){select.selectedIndex++;select.dispatchEvent(new Event('change'));refresh();}};
+    controls.append(minus,select,plus);field.append(caption,controls);return{field,refresh};
+  };
+  const humanStepper=stepper('Menselijke spelers',humanCountSelect),botStepper=stepper('Bots',botCountSelect);
+  options.append(humanStepper.field,botStepper.field);
   const create=element('button','primary','Nieuwe kamer'),status=element('p','muted');
   const editorLink=element('a','map-editor-link','Map genereren of bewerken');editorLink.href='/maps/new';
   const row=element('div','row');row.append(name,create);card.append(options,summary,row,status);main.append(card);
   card.append(editorLink);
   function updateBotOptions(){
-    const humans=Number(humanCountSelect.value),previous=Number(botCountSelect.value),validCounts=[0,1,2,3].filter(count=>humans+count===3||humans+count===4);
+    const humans=Number(humanCountSelect.value),previous=Number(botCountSelect.value),validCounts=Array.from({length:8},(_,count)=>count).filter(count=>humans+count>=2&&humans+count<=8);
     botCountSelect.replaceChildren(...validCounts.map(count=>new Option(String(count),String(count))));
     botCountSelect.value=String(validCounts.includes(previous)?previous:validCounts[0]);
-    summary.textContent=`${humans} menselijke speler${humans===1?'':'s'} en ${botCountSelect.value} bot${botCountSelect.value==='1'?'':'s'} · ${humans+Number(botCountSelect.value)} spelers totaal (3–4)`;
+    for(const option of Array.from(humanCountSelect.options))option.disabled=Number(option.value)+Number(botCountSelect.value)<2||Number(option.value)+Number(botCountSelect.value)>8;
+    humanStepper.refresh();botStepper.refresh();
+    const total=humans+Number(botCountSelect.value);
+    summary.textContent=`${humans} menselijke speler${humans===1?'':'s'} en ${botCountSelect.value} bot${botCountSelect.value==='1'?'':'s'} · ${total} / 8 spelers${total===8?' · maximum bereikt':''}`;
   }
   humanCountSelect.onchange=updateBotOptions;
   botCountSelect.onchange=updateBotOptions;
@@ -293,9 +289,8 @@ function createLine(parent:SVGElement,a:readonly[number,number],b:readonly[numbe
   const line=svgElement('line');line.setAttribute('x1',String(a[0]));line.setAttribute('y1',String(a[1]));line.setAttribute('x2',String(b[0]));line.setAttribute('y2',String(b[1]));line.setAttribute('class',className);parent.append(line);return line;
 }
 function pointForVertex(v:PlayerView,id:number):[number,number]{const vertex=v.board.vertices[id]!;return [vertex.x*Math.sqrt(3),vertex.y];}
-function tileCenter(q:number,r:number):[number,number]{return [(2*q+r)*Math.sqrt(3),3*r];}
+function tileCenter(q:number,r:number):[number,number]{return mapTileCenter(q,r);}
 function pointList(v:PlayerView,ids:number[]){return ids.map(id=>pointForVertex(v,id));}
-function terrainAsset(kind:Resource|'desert'):string{return TILE_ASSETS[kind];}
 function harborPositions(v:PlayerView){
   const harbors=new Map<number,{vertices:number[];kind:string;ratio:number}>();
   for(const vertex of v.board.vertices)if(vertex.harbor){const harbor=harbors.get(vertex.harbor.id)??{vertices:[],kind:vertex.harbor.kind,ratio:vertex.harbor.ratio};harbor.vertices.push(vertex.id);harbors.set(vertex.harbor.id,harbor);}
@@ -340,9 +335,9 @@ function drawBoard(host:HTMLElement,v:PlayerView){
   const terrainTiles:{group:SVGElement;x:number;y:number}[]=[];
   for(const tile of v.board.tiles){
     const rolled=v.lastRoll?v.lastRoll[0]+v.lastRoll[1]:null;const produces=tile.number!==null&&tile.number===rolled;const polygon=svgElement('polygon'),points=pointList(v,tile.vertices),[x,y]=tileCenter(tile.q,tile.r);
-    const box=terrainArtBox(x,y),terrainTile=svgElement('g');terrainTile.setAttribute('class','terrain-tile');terrainTile.dataset.tile=String(tile.id);
-    const art=svgElement('image');art.setAttribute('href',`/tiles/${terrainAsset(tile.kind)}`);art.setAttribute('x',String(box.x));art.setAttribute('y',String(box.y));art.setAttribute('width',String(box.width));art.setAttribute('height',String(box.height));art.setAttribute('preserveAspectRatio','xMidYMid meet');art.setAttribute('class',`terrain-art${produces?' producing':''}`);art.setAttribute('pointer-events','none');art.dataset.kind=tile.kind;art.dataset.tile=String(tile.id);
-    terrainTile.append(art);terrainTiles.push({group:terrainTile,x,y});
+    const terrainTile=createTerrainTileVisual(tile.kind as MapTileKind,x,y,null,{outline:false});terrainTile.setAttribute('class','terrain-tile');terrainTile.dataset.tile=String(tile.id);
+    const art=terrainTile.querySelector('image');if(art){art.setAttribute('class',`terrain-art${produces?' producing':''}`);art.dataset.kind=tile.kind;art.dataset.tile=String(tile.id);}
+    terrainTiles.push({group:terrainTile,x,y});
     polygon.setAttribute('points',points.map(p=>p.join(',')).join(' '));polygon.setAttribute('class',`hex terrain-${tile.kind}${tile.id===v.robberTile?' robber-tile':''}${produces?' producing':''}`);polygon.dataset.tile=String(tile.id);
     const title=svgElement('title');title.textContent=tile.number?`${tile.kind}: ${tile.number}, ${PIPS[tile.number]} pip(s)`:`${tile.kind}`;polygon.append(title);tileLayer.append(polygon);
     drawTerrainIcon(tileLayer,tile.kind,x,y+.58);
@@ -531,6 +526,7 @@ function renderRoom(){
   }
   if(!view){main.append(element('section','card waiting','Spel wordt geladen…'));return;}
   main.classList.add('gx-game');
+  main.dataset.gamePhase=view.phase;main.dataset.activePlayer=view.activePlayerId;
 
   const left=element('aside','gx-side gx-side-left');left.setAttribute('aria-label','Spelers');
   left.append(element('h3','gx-title','Spelers'),renderPlayerList(view));
@@ -656,7 +652,15 @@ function renderChat(){
 }
 document.documentElement.dataset.theme=localStorage.getItem('dimat-theme')??'dark';
 const savedRoom=location.pathname.split('/')[2];roomId=savedRoom??'';
-if(location.pathname==='/maps/new')mountMapEditor(root,()=>location.assign('/'));
+async function startGeneratedGame(map:MapDefinition,humanCount:number,botCount:number):Promise<void>{
+  const displayName=localStorage.getItem('dimat-name')?.trim()||'Speler';
+  const response=await fetch('/api/rooms',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({displayName,humanCount,botCount,mapDefinition:map,startImmediately:true})});
+  const data=await readApiJson<{roomId:string;seatToken:string;playerId:string;message?:string}>(response,'Spel starten');
+  if(!response.ok)throw new Error(data.message??'Spel starten is mislukt.');
+  localStorage.setItem('dimat-name',displayName);roomId=data.roomId;seatToken=data.seatToken;playerId=data.playerId;
+  history.replaceState({},'',`/play/${roomId}`);connect(displayName);
+}
+if(location.pathname==='/maps/new')mountMapEditor(root,()=>location.assign('/'),startGeneratedGame);
 else if(roomId){seatToken=localStorage.getItem(`dimat-seat-${roomId}`)??'';const name=localStorage.getItem('dimat-name')??'';if(name)connect(name);else lobby('Vul je naam in om aan te sluiten.');}else lobby();
 document.addEventListener('keydown',event=>{if(event.key!=='`'||event.ctrlKey||event.metaKey||event.altKey)return;const target=event.target;if(target instanceof HTMLInputElement||target instanceof HTMLTextAreaElement||target instanceof HTMLSelectElement)return;debugEnabled=!debugEnabled;const url=new URL(location.href);if(debugEnabled)url.searchParams.set('debug','1');else url.searchParams.delete('debug');history.replaceState({},'',url);render();void refreshDebugData();});
 window.addEventListener('error',event=>{const message=event.error instanceof Error?event.error.message:event.message;root.replaceChildren();const card=element('section','card fatal-error');card.append(element('h1','','DiMaT liep vast'),element('p','',message));const copy=element('button','','Kopieer foutinformatie');copy.onclick=async()=>{const bundle=JSON.stringify({message,stack:event.error instanceof Error?event.error.stack:undefined,roomId,playerId,view,userAgent:navigator.userAgent},null,2);try{await navigator.clipboard.writeText(bundle);copy.textContent='Gekopieerd ✓';}catch{copy.textContent='Kopiëren niet beschikbaar';}};root.append(card);});

@@ -28,18 +28,18 @@ const ownDev=(s:GameState,p:number,kind:DevCard)=>s.players[p]!.devCards.some(c=
 export function createGame(seed:number,settings:Partial<GameSettings>={}):GameState {
   const playerCount=settings.playerCount??4;
   if(settings.victoryTarget!==undefined&&(!Number.isInteger(settings.victoryTarget)||settings.victoryTarget<1))throw new RangeError('victoryTarget must be a positive integer');
-  if(playerCount!==3&&playerCount!==4)throw new RangeError('The base game supports three or four players');
+  if(!Number.isInteger(playerCount)||playerCount<2||playerCount>8)throw new RangeError('The base game supports two to eight players');
   const normalizedSeed=seed>>>0||0x9e3779b9;
   const mapDefinition=settings.map;
   let board:Board;
   let boardRng:number;
   let bank=START_BANK();
   if(mapDefinition){
-    if(playerCount<mapDefinition.players.min||playerCount>mapDefinition.players.max)throw new RangeError(`Map ${mapDefinition.id} does not support ${playerCount} players`);
     const validation=validateMap(mapDefinition,{
       custom:mapDefinition.style==='custom',
       balance:mapDefinition.meta.options?.balance==='balanced'?'balanced':'random',
-      players:playerCount
+      players:playerCount,
+      avoidAdjacentRed:mapDefinition.meta.options?.avoidAdjacentRed!==false
     });
     if(!validation.ok)throw new RangeError(`Map ${mapDefinition.id} is invalid: ${validation.errors.join('; ')}`);
     if(mapDefinition.tiles.some(tile=>tile.kind==='gold'||tile.kind==='fog'))throw new RangeError('The engine does not support gold or fog map tiles');

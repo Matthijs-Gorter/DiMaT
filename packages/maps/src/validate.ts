@@ -16,6 +16,8 @@ export interface ValidateOptions {
   maxLandTiles?: number;
   /** Maximum permitted score spread among fair starting spots. Default 5. */
   startSpreadMax?: number;
+  /** Set false to permit adjacent 6/8 tokens for explicitly random/custom layouts. */
+  avoidAdjacentRed?: boolean;
 }
 export const DEFAULT_MAX_LAND_TILES = 150;
 export const START_SPREAD_MAX = 5;
@@ -96,7 +98,10 @@ export const checkCounts: Check = (def, options) => {
   const expected = scaleResourceCounts(landCount, players);
   const relaxed = options.custom || def.style === 'custom';
   const report = relaxed ? result.warnings : result.errors;
-  for (const kind of [...RESOURCES, 'desert'] as const) {
+  if (def.style === 'random' && !relaxed) {
+    if (actual.desert !== expected.desert) result.errors.push(`desert count is ${actual.desert}, expected ${expected.desert}`);
+    for (const kind of RESOURCES) if (actual[kind]! < 1) result.errors.push(`random map must include at least one ${kind} tile`);
+  } else for (const kind of [...RESOURCES, 'desert'] as const) {
     const difference = Math.abs(actual[kind]! - expected[kind]);
     if (relaxed ? difference > 1 : difference !== 0) report.push(`${kind} count is ${actual[kind]}, expected ${expected[kind]}${relaxed ? ' ±1' : ''}`);
   }
@@ -114,6 +119,7 @@ function resourceTiles(def: MapDefinition): MapTile[] {
 
 export const checkNoAdjacentRed: Check = (def, options) => {
   const result = none();
+  if (options.avoidAdjacentRed === false) return result;
   const byKey = tileIndex(def);
   const red = (tile: MapTile | undefined) => !!tile && (tile.number === 6 || tile.number === 8);
   const report = options.custom || def.style === 'custom' ? result.warnings : result.errors;
@@ -214,7 +220,6 @@ export const checkHarbors: Check = (def) => {
 
 export const checkStartSpots: Check = (def, options) => {
   const result = none();
-  if (options.balance !== 'balanced') return result;
   const players = options.players ?? def.players.max;
   const vertices = new Map<string, { neighbors: Set<string>; resources: Set<string>; pips: number }>();
   const connect = (a: string, b: string) => {
@@ -246,17 +251,20 @@ export const checkStartSpots: Check = (def, options) => {
     }
     return selected;
   };
-  const minimum = players * 2 + 2;
-  if (selectSpots(candidates, minimum).length < minimum) result.errors.push(`fewer than ${minimum} non-adjacent legal start vertices`);
+  const minimum = players * 2;
+  if (selectSpots(candidates, minimum).length < minimum) result.errors.push(`fewer than ${minimum} non-adjacent legal setup vertices`);
+  if (options.balance !== 'balanced') return result;
+  const comfortableMinimum = minimum + 2;
+  if (selectSpots(candidates, comfortableMinimum).length < comfortableMinimum) result.warnings.push(`fewer than ${comfortableMinimum} non-adjacent legal start vertices; setup choices may be tight`);
   const fairSpots = selectSpots(candidates, players * 2);
   if (fairSpots.length === players * 2) {
     const scores = fairSpots.map(spot => spot.score);
     const spread = Math.max(...scores) - Math.min(...scores);
     const maxSpread = options.startSpreadMax ?? START_SPREAD_MAX;
-    if (spread > maxSpread) result.errors.push(`fair start spot spread ${spread} exceeds ${maxSpread}`);
+    if (spread > maxSpread) result.warnings.push(`fair start spot spread ${spread} exceeds recommended ${maxSpread}`);
   }
   if (selectSpots(candidates.filter(candidate => candidate.score >= 8), minimum).length < minimum) {
-    result.errors.push(`fewer than ${minimum} non-adjacent start vertices have score 8 or higher`);
+    result.warnings.push(`fewer than ${minimum} non-adjacent start vertices have score 8 or higher`);
   }
   return result;
 };

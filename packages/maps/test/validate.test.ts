@@ -104,7 +104,7 @@ describe('checkStartSpots', () => {
       tiles: base.tiles.map(tile => (tile.kind === 'desert' ? tile : { ...tile, number: 6 }))
     };
     expect(checkStartSpots(rich, { balance: 'balanced', players: 3 }).errors).toEqual([]);
-    expect(checkStartSpots(base, { balance: 'balanced', players: 8 }).errors.length).toBeGreaterThan(0);
+    expect(checkStartSpots(discMap(1), { balance: 'balanced', players: 8 }).errors.join()).toMatch(/fewer than 16 non-adjacent legal setup vertices/);
   });
 });
 

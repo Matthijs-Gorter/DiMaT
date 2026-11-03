@@ -6,10 +6,11 @@ import { Worker } from 'node:worker_threads';
 import { apply, createGame, legalActions, replayGame, validateTradeAction, viewFor, type GameAction, type GameEvent, type GameSettings, type GameState, type PlayerView } from '@dimat/engine';
 import { chooseRandomAction } from '@dimat/bots';
 import { mapDefinitionSchema, mapCodeSchema, clientMessageSchema, createRoomSchema, type BotStatus, type MapDefinitionInput, type RoomLifecycle, type ServerMessage } from '@dimat/protocol';
-import { validateMap } from '@dimat/maps';
+import { BEGINNER_MAP_CODE, getBeginnerMap, validateMap } from '@dimat/maps';
+import { decisionActorIndex } from './bot-turn.js';
 
 type Seat={playerId:string;displayName:string;token:string;bot:boolean;level:0|1|2;lastSequence:number;lastChatAt?:number;botStatus?:BotStatus['status'];botReason?:string;decisionMs?:number;socket?:WebSocket};
-type Room={id:string;state:GameState;settings:GameSettings;actions:GameAction[];recentEvents:GameEvent[];seats:Seat[];lifecycle:RoomLifecycle;seed:number};
+type Room={id:string;state:GameState;settings:GameSettings;actions:GameAction[];recentEvents:GameEvent[];seats:Seat[];lifecycle:RoomLifecycle;seed:number;startImmediately:boolean};
 type StructuredError={code:string;message:string;details?:Record<string,unknown>};
 
 class RoomError extends Error {
@@ -35,7 +36,8 @@ app.post('/api/maps',async(req,reply)=>{
   const validation=validateMap(definition,{
     custom:definition.style==='custom',
     balance:definition.meta.options?.balance==='balanced'?'balanced':'random',
-    players:definition.players.max
+    avoidAdjacentRed:definition.meta.options?.avoidAdjacentRed!==false,
+    players:definition.players.min
   });
   if(!validation.ok)return reply.code(400).send({code:'INVALID_MAP',message:'Map validation failed.',details:{errors:validation.errors,warnings:validation.warnings}});
   const mapId=definition.id;
@@ -53,6 +55,7 @@ app.post('/api/maps',async(req,reply)=>{
 app.get('/api/maps/:code',async(req,reply)=>{
   const params=req.params as {code:string},parsed=mapCodeSchema.safeParse(params.code);
   if(!parsed.success)return reply.code(400).send({code:'INVALID_MAP_CODE',message:'Map share codes must be six uppercase letters or digits.'});
+  if(parsed.data===BEGINNER_MAP_CODE)return {map:getBeginnerMap()};
   const row=db.prepare('SELECT definition FROM maps WHERE share_code=?').get(parsed.data) as {definition:string}|undefined;
   if(!row)return reply.code(404).send({code:'MAP_NOT_FOUND',message:'Map not found.'});
   return {map:mapDefinitionSchema.parse(JSON.parse(row.definition))};
@@ -64,18 +67,28 @@ app.post('/api/rooms',async(req,reply)=>{
   const seed=parsed.data.seed??randomBytes(4).readUInt32LE();
   const id=randomUUID().slice(0,8);
   const playerCount=humanCount+botCount;
-  if(playerCount!==3&&playerCount!==4)throw new Error('Room validation returned an unsupported player count.');
+  if(playerCount<2||playerCount>8)throw new Error('Room validation returned an unsupported player count.');
   let mapDefinition:MapDefinitionInput|undefined;
-  if(mapCode){
-    const row=db.prepare('SELECT definition FROM maps WHERE share_code=?').get(mapCode) as {definition:string}|undefined;
-    if(!row)return reply.code(404).send({code:'MAP_NOT_FOUND',message:'The selected map code does not exist.'});
-    mapDefinition=mapDefinitionSchema.parse(JSON.parse(row.definition));
-    if(playerCount<mapDefinition.players.min||playerCount>mapDefinition.players.max){
-      return reply.code(400).send({code:'MAP_PLAYER_COUNT',message:'The selected map does not support this room size.'});
+  if(parsed.data.mapDefinition)mapDefinition=parsed.data.mapDefinition;
+  else if(mapCode){
+    if(mapCode===BEGINNER_MAP_CODE)mapDefinition=mapDefinitionSchema.parse(getBeginnerMap());
+    else{
+      const row=db.prepare('SELECT definition FROM maps WHERE share_code=?').get(mapCode) as {definition:string}|undefined;
+      if(!row)return reply.code(404).send({code:'MAP_NOT_FOUND',message:'The selected map code does not exist.'});
+      mapDefinition=mapDefinitionSchema.parse(JSON.parse(row.definition));
     }
+  }
+  if(mapDefinition){
     if(mapDefinition.tiles.some(tile=>tile.kind==='gold'||tile.kind==='fog')){
       return reply.code(400).send({code:'UNSUPPORTED_MAP_FEATURE',message:'This engine version does not support gold or fog map tiles.'});
     }
+    const validation=validateMap(mapDefinition,{
+      custom:mapDefinition.style==='custom',
+      balance:mapDefinition.meta.options?.balance==='balanced'?'balanced':'random',
+      players:playerCount,
+      avoidAdjacentRed:mapDefinition.meta.options?.avoidAdjacentRed!==false
+    });
+    if(!validation.ok)return reply.code(400).send({code:'INVALID_MAP',message:'The map cannot support this player count.',details:{players:playerCount,errors:validation.errors,warnings:validation.warnings}});
   }
   const settings:GameSettings={playerCount,victoryTarget:10,...(mapDefinition?{map:mapDefinition}:{})};
   const seats:Seat[]=[];
@@ -84,7 +97,7 @@ app.post('/api/rooms',async(req,reply)=>{
     const playerIndex=humanCount+i;
     seats.push({playerId:`p${playerIndex}`,displayName:`Bot ${i+1}`,token:token(),bot:true,level:i===0?1:2,lastSequence:-1});
   }
-  const room:Room={id,state:createGame(seed,settings),settings,actions:[],recentEvents:[],seats,lifecycle:'lobby',seed};
+  const room:Room={id,state:createGame(seed,settings),settings,actions:[],recentEvents:[],seats,lifecycle:'lobby',seed,startImmediately:parsed.data.startImmediately??false};
   rooms.set(id,room);persist(room);
   app.log.info({roomId:id,seatId:'p0',actionType:'createRoom',humanCount,botCount,outcome:'accepted'},'room created');
   return {roomId:id,seatToken:seats[0]!.token,playerId:'p0',invite:`/play/${id}`};
@@ -160,7 +173,8 @@ async function driveBots(room:Room){
     while(room.lifecycle==='started'&&room.state.phase!=='finished'&&guard++<256){
       const offer=room.state.phase==='build'?room.state.tradeOffer:null;
       const responder=offer?.targets.find(id=>!offer.declinedBy.includes(id)&&room.seats.find(candidate=>candidate.playerId===id)?.bot);
-      const seat=responder?room.seats.find(candidate=>candidate.playerId===responder):room.seats[room.state.activePlayer];if(!seat?.bot)break;
+      const actorIndex=decisionActorIndex(room.state);
+      const seat=responder?room.seats.find(candidate=>candidate.playerId===responder):actorIndex===null?undefined:room.seats[actorIndex];if(!seat?.bot)break;
       const view=viewFor(room.state,seat.playerId),seed=(room.state.rngState^room.actions.length)>>>0;let action:GameAction;const startedAt=performance.now();seat.botStatus='thinking';seat.botReason=undefined;broadcastRoom(room);
       try{action=await botAction(view,seat.level as 1|2,seed);}
       catch(error){
@@ -206,6 +220,7 @@ async function handleMessage(ws:WebSocket,raw:string,connection:{room?:Room;seat
       seat.displayName=message.displayName;seat.socket=ws;connection.room=candidate;connection.seat=seat;persist(candidate);
       send(ws,{type:'joined',roomId:candidate.id,seatToken:seat.token,playerId:seat.playerId,lifecycle:candidate.lifecycle});broadcastRoom(candidate);
       if(candidate.lifecycle!=='lobby')sendPrivateView(candidate,seat);
+      else if(candidate.startImmediately&&candidate.seats.filter(s=>!s.bot).every(s=>s.displayName))startRoom(candidate);
       return;
     }
     const parsed=clientMessageSchema.safeParse(input);if(!parsed.success)throw new RoomError('INVALID_MESSAGE','The message does not match the protocol.');
@@ -256,6 +271,6 @@ export function restoreSavedGames(){
     const saved=JSON.parse(row.seats) as Array<Omit<Seat,'socket'>>;
     const seats=saved.map(s=>({...s,lastSequence:s.lastSequence??-1,...(s.bot?{botStatus:'idle' as const}:{})}));
     const lifecycle:RoomLifecycle=state.phase==='finished'?'finished':row.lifecycle==='lobby'&&actions.length>0?'started':row.lifecycle;
-    rooms.set(row.id,{id:row.id,state,settings,actions,recentEvents:[],seats,lifecycle,seed:row.seed});
+    rooms.set(row.id,{id:row.id,state,settings,actions,recentEvents:[],seats,lifecycle,seed:row.seed,startImmediately:false});
   }
 }
