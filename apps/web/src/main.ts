@@ -7,6 +7,7 @@ import { createTerrainTileVisual, mapHarborCenter } from './terrain-rendering.js
 import { readApiJson } from './api-json.js';
 import './style.css';
 import './game-ui.css';
+import './theme.css'; // Single source of truth for all editable UI colors.
 
 document.documentElement.dataset.theme=localStorage.getItem('dimat-theme')??'dark';
 document.body.classList.add('surface-page');
