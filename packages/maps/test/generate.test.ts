@@ -11,15 +11,23 @@ describe('generateMap', () => {
     expect(JSON.stringify(generateMap(options))).toBe(JSON.stringify(generateMap(options)));
   });
 
-  it('returns validated maps across styles, player counts and 200 seeds', () => {
-    for (const style of STYLES) for (let players = 3; players <= 8; players++) for (let seed = 1; seed <= 200; seed++) {
-      const map = generateMap({ style, seed, players: players as 3 | 4 | 5 | 6 | 7 | 8, balance: 'random' });
-      expect(validateMap(map, { balance: 'random', players }).errors, `${style}, ${players} players, seed ${seed}`).toEqual([]);
-      expect(map.tiles.filter(tile => tile.kind !== 'water').length + map.tiles.filter(tile => tile.kind === 'water').length).toBe(map.tiles.length);
-      expect(map.meta.generatorVersion).toBe(1);
-      expect(map.meta.attempts).toBeGreaterThanOrEqual(1);
-    }
-  }, 120_000);
+  // The generators are synchronous CPU work. Without yielding to the event loop, vitest's worker RPC
+  // ("Timeout calling onTaskUpdate", 60 s) starves and `pnpm -r test` exits non-zero although every assertion passes.
+  // So: one test per style, and a macrotask yield after each player count.
+  for (const style of STYLES) {
+    it(`returns validated ${style} maps across player counts and 200 seeds`, async () => {
+      for (let players = 3; players <= 8; players++) {
+        for (let seed = 1; seed <= 200; seed++) {
+          const map = generateMap({ style, seed, players: players as 3 | 4 | 5 | 6 | 7 | 8, balance: 'random' });
+          expect(validateMap(map, { balance: 'random', players }).errors, `${style}, ${players} players, seed ${seed}`).toEqual([]);
+          expect(map.tiles.filter(tile => tile.kind !== 'water').length + map.tiles.filter(tile => tile.kind === 'water').length).toBe(map.tiles.length);
+          expect(map.meta.generatorVersion).toBe(1);
+          expect(map.meta.attempts).toBeGreaterThanOrEqual(1);
+        }
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }, 120_000);
+  }
 
   it('tries balanced-map fairness checks when requested', () => {
     const map = generateMap({ style: 'standard', seed: 99, players: 3, balance: 'balanced' });

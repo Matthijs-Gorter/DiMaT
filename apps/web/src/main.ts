@@ -26,7 +26,8 @@ const TILE_ART_BOUNDS={canvasWidth:1225,canvasHeight:1311,x:47,y:1,width:1132,he
 const HEX_PITCH=2*Math.sqrt(3);
 // Roads are drawn centered on tile edges, so tiles are inset by half a road width per side:
 // the gap between two neighbouring tiles is then exactly one road wide. Keep in sync with .road-piece in style.css.
-const ROAD_WIDTH=.2;
+const ROAD_STROKE='.2';
+const ROAD_WIDTH=Number(ROAD_STROKE);
 const TILE_GAP=ROAD_WIDTH;
 const TILE_INSET_RATIO=(HEX_PITCH/2-TILE_GAP/2)/(HEX_PITCH/2);
 function terrainArtBox(cx:number,cy:number){
@@ -37,9 +38,6 @@ function terrainArtBox(cx:number,cy:number){
     width:art.canvasWidth*scale,
     height:art.canvasHeight*scale
   };
-}
-function insetTilePoints(points:[number,number][],center:[number,number]):[number,number][]{
-  return points.map(point=>[center[0]+(point[0]-center[0])*TILE_INSET_RATIO,center[1]+(point[1]-center[1])*TILE_INSET_RATIO]);
 }
 const HARBOR_MARKER_SIZE=.9;
 const HARBOR_OFFSET=1.1;
@@ -343,7 +341,6 @@ function drawBoard(host:HTMLElement,v:PlayerView){
   for(const tile of v.board.tiles){
     const rolled=v.lastRoll?v.lastRoll[0]+v.lastRoll[1]:null;const produces=tile.number!==null&&tile.number===rolled;const polygon=svgElement('polygon'),points=pointList(v,tile.vertices),[x,y]=tileCenter(tile.q,tile.r);
     const box=terrainArtBox(x,y),terrainTile=svgElement('g');terrainTile.setAttribute('class','terrain-tile');terrainTile.dataset.tile=String(tile.id);
-    const clip=svgElement('clipPath');clip.setAttribute('id',`tile-clip-${tile.id}`);const clipShape=svgElement('polygon');clipShape.setAttribute('points',insetTilePoints(points,[x,y]).map(p=>p.join(',')).join(' '));clip.append(clipShape);defs.append(clip);terrainTile.setAttribute('clip-path',`url(#tile-clip-${tile.id})`);
     const art=svgElement('image');art.setAttribute('href',`/tiles/${terrainAsset(tile.kind)}`);art.setAttribute('x',String(box.x));art.setAttribute('y',String(box.y));art.setAttribute('width',String(box.width));art.setAttribute('height',String(box.height));art.setAttribute('preserveAspectRatio','xMidYMid meet');art.setAttribute('class',`terrain-art${produces?' producing':''}`);art.setAttribute('pointer-events','none');art.dataset.kind=tile.kind;art.dataset.tile=String(tile.id);
     terrainTile.append(art);terrainTiles.push({group:terrainTile,x,y});
     polygon.setAttribute('points',points.map(p=>p.join(',')).join(' '));polygon.setAttribute('class',`hex terrain-${tile.kind}${tile.id===v.robberTile?' robber-tile':''}${produces?' producing':''}`);polygon.dataset.tile=String(tile.id);
@@ -357,12 +354,12 @@ function drawBoard(host:HTMLElement,v:PlayerView){
     if(tile.id===v.robberTile){const pawn=svgElement('g');pawn.setAttribute('class','robber-pawn');pawn.setAttribute('transform',`translate(${x-.78},${y-.38})`);const head=svgElement('circle');head.setAttribute('cx','0');head.setAttribute('cy','-.2');head.setAttribute('r','.18');const body=svgElement('path');body.setAttribute('d','M-.29 .26 Q-.24 -.08 0 -.08 Q.24 -.08 .29 .26 Z');pawn.append(head,body);tileLayer.append(pawn);}
     const actions=tileTargets.get(tile.id);if(actions?.length){const hit=svgElement('polygon');hit.setAttribute('points',points.map(p=>p.join(',')).join(' '));hit.setAttribute('class',`board-target legal-tile${pending?.targetKey===`tile-${tile.id}`?' pending':''}`);hit.dataset.targetKey=`tile-${tile.id}`;hit.dataset.victimCount=String(new Set(actions.flatMap(action=>action.type==='moveRobber'||action.type==='playKnight'?action.victimId?[action.victimId]:[]:[])).size);hit.addEventListener('click',()=>chooseRobberAction(actions,tile.id));targetLayer.append(hit);}
   }
-  // Tiles no longer overlap (each is clipped to an inset hexagon), so draw order does not matter.
-  for(const entry of terrainTiles)terrainLayer.append(entry.group);
+  // Tiles are inset by half a road width and no longer overlap; keep a stable top-to-bottom DOM order anyway.
+  terrainTiles.sort((a,b)=>Math.abs(a.y-b.y)>1e-6?a.y-b.y:a.x-b.x);for(const entry of terrainTiles)terrainLayer.append(entry.group);
   for(const edge of v.board.edges){
     const [a,b]=edge.vertices.map(id=>pointForVertex(v,id)) as [[number,number],[number,number]];
     if(edge.kind==='river'){const water=createLine(roadLayer,a,b,'river-edge');water.setAttribute('stroke-width','.1');}
-    const road=v.roads[edge.id];if(road){const piece=createLine(roadLayer,a,b,`road-piece player-${road.owner}${edge.kind==='river'?' bridge-piece':''}`);piece.setAttribute('stroke-width',String(ROAD_WIDTH));}
+    const road=v.roads[edge.id];if(road){const piece=createLine(roadLayer,a,b,`road-piece player-${road.owner}${edge.kind==='river'?' bridge-piece':''}`);piece.setAttribute('stroke-width',ROAD_STROKE);}
     const action=edgeTargets.get(edge.id);if(action){const highlight=createLine(targetLayer,a,b,'legal-road-highlight');highlight.setAttribute('stroke','#a5ffc2');highlight.setAttribute('stroke-width','.2');highlight.setAttribute('stroke-dasharray','.1 .09');highlight.setAttribute('pointer-events','none');const dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy),halfWidth=.36,nx=-dy/length*halfWidth,ny=dx/length*halfWidth;const hit=svgElement('polygon');hit.setAttribute('points',[[a[0]+nx,a[1]+ny],[b[0]+nx,b[1]+ny],[b[0]-nx,b[1]-ny],[a[0]-nx,a[1]-ny]].map(point=>point.join(',')).join(' '));hit.setAttribute('class',`board-target road-edge legal${pending?.targetKey===`edge-${edge.id}`?' pending':''}`);hit.setAttribute('fill','#fff');hit.setAttribute('fill-opacity','.001');hit.setAttribute('pointer-events','all');hit.dataset.targetKey=`edge-${edge.id}`;targetLayer.append(hit);
       hit.addEventListener('click',()=>sendAction(action,`edge-${edge.id}`));hit.addEventListener('pointerenter',()=>showPiecePreview(previewLayer,'road',[(a[0]+b[0])/2,(a[1]+b[1])/2],playerColor(playerId),[a,b]));hit.addEventListener('pointerleave',()=>previewLayer.replaceChildren());}
   }
