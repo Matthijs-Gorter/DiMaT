@@ -19,6 +19,25 @@ main{max-width:1500px;padding:1.4rem clamp(.75rem,3vw,2.4rem) 2.5rem}
 .pip-dot{fill:#a54132;pointer-events:none}
 .robber-pawn{fill:#24313a;stroke:#f0d1a0;stroke-width:.055;filter:drop-shadow(0 .05px .06px #0008);pointer-events:none}
 .road-piece{stroke:#25343c;stroke-width:.2;stroke-linecap:round;pointer-events:none}
+.river-edge{stroke:#5ab7df;stroke-linecap:round;pointer-events:none}
+.bridge-piece{stroke-dasharray:.18 .08}
+.map-picker-row{display:flex;gap:.6rem;align-items:center;margin:.8rem 0}
+.map-picker-row input{min-width:0;flex:1}
+.map-picker-status{min-height:1.4em}
+.map-preview:empty{display:none}
+.map-preview-board{display:block;width:min(100%,32rem);height:12rem;margin:.5rem auto 1rem;background:#102633;border:1px solid #48606e;border-radius:.75rem}
+.map-editor{width:min(1200px,100%);margin:0 auto;padding:1rem}
+.map-editor-heading{display:flex;align-items:center;gap:1rem;margin-bottom:1rem}
+.map-editor-heading h1{margin:0}
+.map-editor-fields{display:flex;flex-wrap:wrap;gap:.75rem;align-items:end}
+.map-editor-fields label{display:grid;gap:.35rem;min-width:8rem}
+.map-editor-fields input,.map-editor-fields select{width:100%;min-height:2.5rem}
+.map-editor-board{overflow:auto;max-height:70vh;margin-top:1rem;background:#102633;border:1px solid #48606e;border-radius:.75rem}
+.map-editor-board svg{display:block;width:100%;min-width:34rem;max-height:70vh}
+.map-validation{max-height:12rem;overflow:auto;margin-top:1rem}
+.map-valid{color:#8ed6a3}.map-invalid,.map-error{color:#ff8c83}.map-warning{color:#f3d37a}.map-share-code{color:#b7edff}
+.map-editor-link{display:inline-block;margin-top:.75rem}
+@media(max-width:700px){.map-editor{padding:.75rem}.map-editor-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.map-editor-board svg{min-width:48rem}}
 .road-piece.player-0{stroke:#40c3ed}.road-piece.player-1{stroke:#f27665}.road-piece.player-2{stroke:#f2cd54}.road-piece.player-3{stroke:#bd9cff}
 .building-piece{stroke:#f3ead5;stroke-width:.09;stroke-linejoin:round;filter:drop-shadow(0 .06px .05px #0008);pointer-events:none}
 .building-piece.player-0{fill:#39aaca}.building-piece.player-1{fill:#db6554}.building-piece.player-2{fill:#d7ac29}.building-piece.player-3{fill:#8169c7}.building-door{fill:#f8e9c6;stroke:none}

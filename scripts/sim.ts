@@ -1,13 +1,17 @@
-import { apply, cardCounts, createGame, legalActionsForRandomBot, resourceTotal, type GameAction, type GameState, RESOURCES } from '../packages/engine/src/index.js';
+import { apply, cardCounts, createGame, legalActionsForRandomBot, resourceTotal, type GameAction, type GameSettings, type GameState, RESOURCES } from '../packages/engine/src/index.js';
 import { chooseRandomFromActions } from '../packages/bots/src/index.js';
+import { generateMap, type TerrainStyle } from '../packages/maps/src/index.js';
 
 export function assertInvariant(state:GameState):void {
-  for(const r of RESOURCES){if(state.bank[r]<0)throw new Error(`Negative bank stock for ${r}`);if(resourceTotal(state,r)!==19)throw new Error(`Card circulation changed for ${r}: ${resourceTotal(state,r)}`);}
+  const expectedResourceTotal=state.settings.map?.tiles.filter(tile=>tile.kind!=='water').length??19;
+  for(const r of RESOURCES){if(state.bank[r]<0)throw new Error(`Negative bank stock for ${r}`);if(resourceTotal(state,r)!==expectedResourceTotal)throw new Error(`Card circulation changed for ${r}: ${resourceTotal(state,r)} != ${expectedResourceTotal}`);}
   const cards=cardCounts(state);const expected={knight:14,victoryPoint:5,roadBuilding:2,yearOfPlenty:2,monopoly:2};
   for(const key of Object.keys(expected) as (keyof typeof expected)[])if(cards[key]!==expected[key])throw new Error(`Development card count changed for ${key}`);
   for(let p=0;p<state.players.length;p++){
     const player=state.players[p]!;const roads=state.roads.filter(r=>r?.owner===p).length;const settlements=state.buildings.filter(b=>b?.owner===p&&b.kind==='settlement').length;const cities=state.buildings.filter(b=>b?.owner===p&&b.kind==='city').length;
     if(player.roadsLeft+roads!==15)throw new Error(`Road piece limit violated for ${player.id}`);
+    const bridges=state.roads.filter((road,edge)=>road?.owner===p&&state.board.edges[edge]?.kind==='river').length;
+    if(player.bridgesLeft+bridges!==3)throw new Error(`Bridge piece limit violated for ${player.id}`);
     if(player.settlementsLeft+settlements!==5)throw new Error(`Settlement piece limit violated for ${player.id}`);
     if(player.citiesLeft+cities!==4)throw new Error(`City piece limit violated for ${player.id}`);
   }
@@ -17,8 +21,8 @@ export function assertInvariant(state:GameState):void {
   }
 }
 
-export function simulateGame(seed:number,playerCount:3|4=4,maxActions=20000):{state:GameState;actions:GameAction[]} {
-  let state=createGame(seed,{playerCount});const actions:GameAction[]=[];let decisionSeed=(seed^0xa5a5a5a5)>>>0;
+export function simulateGame(seed:number,playerCount:3|4=4,maxActions=20000,settings:Partial<GameSettings>={}):{state:GameState;actions:GameAction[]} {
+  let state=createGame(seed,{...settings,playerCount});const actions:GameAction[]=[];let decisionSeed=(seed^0xa5a5a5a5)>>>0;
   for(let i=0;i<maxActions&&state.phase!=='finished';i++){
     const playerIndex=state.phase==='discard'?state.pendingDiscards[0]!:state.activePlayer;
     const choices=legalActionsForRandomBot(state,state.players[playerIndex]!.id);
@@ -33,9 +37,18 @@ export function simulateGame(seed:number,playerCount:3|4=4,maxActions=20000):{st
   return {state,actions};
 }
 
-function parseArgs(args:string[]):{games:number;seed:number}{let games=1000,seed=1;for(let i=0;i<args.length;i++){if(args[i]==='--games')games=Number(args[++i]);else if(args[i]==='--seed')seed=Number(args[++i]);else throw new Error(`Unknown argument: ${args[i]}`);}if(!Number.isInteger(games)||games<1||!Number.isInteger(seed))throw new Error('Expected positive integer --games and integer --seed');return{games,seed};}
+function parseArgs(args:string[]):{games:number;seed:number;mapMatrix:boolean}{let games=1000,seed=1,mapMatrix=false;for(let i=0;i<args.length;i++){if(args[i]==='--games')games=Number(args[++i]);else if(args[i]==='--seed')seed=Number(args[++i]);else if(args[i]==='--map-matrix')mapMatrix=true;else throw new Error(`Unknown argument: ${args[i]}`);}if(!Number.isInteger(games)||games<1||!Number.isInteger(seed))throw new Error('Expected positive integer --games and integer --seed');return{games,seed,mapMatrix};}
 if(process.argv[1]?.endsWith('/sim.ts')){
-  const {games,seed}=parseArgs(process.argv.slice(2));let actions=0;const started=Date.now();
-  for(let i=0;i<games;i++){const result=simulateGame(seed+i);actions+=result.actions.length;if((i+1)%1000===0)console.log(`Completed ${i+1}/${games} games`);}
-  console.log(`OK: ${games} games, ${actions} actions, seed ${seed}, ${Date.now()-started} ms`);
+  const {games,seed,mapMatrix}=parseArgs(process.argv.slice(2));let actions=0,completed=0;const started=Date.now();
+  if(mapMatrix){
+    const styles:TerrainStyle[]=['standard','continent','archipelago','river','lakes','atoll','irregular','random'];
+    for(const style of styles)for(let game=0;game<games;game++){
+      const gameSeed=seed+completed,map=generateMap({style,seed:gameSeed,players:4,balance:'random'});
+      const result=simulateGame(gameSeed,4,20000,{map});actions+=result.actions.length;completed++;
+      if(completed%games===0)console.log(`Completed ${style}: ${games} game(s)`);
+    }
+  }else{
+    for(let i=0;i<games;i++){const result=simulateGame(seed+i);actions+=result.actions.length;completed++;if((i+1)%1000===0)console.log(`Completed ${i+1}/${games} games`);}
+  }
+  console.log(`OK: ${completed} games, ${actions} actions, seed ${seed}${mapMatrix?' (map matrix)':''}, ${Date.now()-started} ms`);
 }

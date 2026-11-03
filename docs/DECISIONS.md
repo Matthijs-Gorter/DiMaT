@@ -18,6 +18,14 @@
 - Victory is checked against the actor who performed the transition, including hidden victory-point cards, so ending a turn cannot award another player's win early.
 - Official base-game FAQ confirms the seven-card discard rule and robber move/steal, shortage handling, development-card timing, and Longest Road tie behavior; unresolved edition details remain open.
 
+## 2026-11-03 — River bridge house rule
+- **ASSUMPTION — bridge cost and supply:** A bridge costs 2 lumber and 2 brick. Each player has three bridge pieces, all drawn from the existing 15 road pieces; building a bridge consumes one bridge piece and one road piece.
+- A bridge may be built only on a river edge connected to the player's network. It counts as a road for connectivity and Longest Road; ordinary roads and Road Building cards cannot occupy river edges.
+
+## 2026-11-03 — Map bank scaling
+- **ASSUMPTION — bank supply for map games:** Each base resource starts with a bank supply equal to the map's land-tile count. The legacy 19-tile board therefore retains its existing supply of 19 per resource.
+- Engine map settings store the complete validated `MapDefinition` so action-log replay does not depend on future generator versions.
+
 ## 2026-10-29 — Phase 2.1 root-cause findings
 
 - **Lobby actions / `GAME_NOT_STARTED`:** The server sent a full `PlayerView` (including legal actions) as soon as a seat joined, while the room remained in `lobby`. The client rendered the action picker before the host started the game and sent those actions without a `gameStarted` acknowledgement. The server returned an unstructured string error, which the client appended to the event list. The old sidebar also had a second, unguarded Start button. The lifecycle is now explicit (`lobby`, `started`, `finished`); the lobby receives no game view, the client gates actions on the `gameStarted` message, and rejected requests carry stable error codes.

@@ -44,6 +44,9 @@ importers:
       '@dimat/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@dimat/maps':
+        specifier: workspace:*
+        version: link:../../packages/maps
       '@dimat/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -78,6 +81,9 @@ importers:
       '@dimat/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@dimat/maps':
+        specifier: workspace:*
+        version: link:../../packages/maps
       '@dimat/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -109,6 +115,10 @@ importers:
         version: 3.2.7(@types/node@26.6.6)(supports-color@7.2.0)(tsx@4.23.15)
 
   packages/engine:
+    dependencies:
+      '@dimat/maps':
+        specifier: workspace:*
+        version: link:../maps
     devDependencies:
       '@types/node':
         specifier: ^26.6.6

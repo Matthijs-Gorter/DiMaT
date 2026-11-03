@@ -18,6 +18,7 @@ export function chooseHeuristicAction(view:PlayerView):GameAction {
   if(a.type==='buildCity')return 95;
   if(a.type==='buyDevelopmentCard')return 62;
   if(a.type==='buildRoad'||a.type==='playRoadBuilding')return 30;
+  if(a.type==='buildBridge')return 32;
   if(a.type==='playKnight')return 28;
   if(a.type==='playYearOfPlenty'||a.type==='playMonopoly')return 20;
   if(a.type==='maritimeTrade')return held.has(a.receive)?8:15;

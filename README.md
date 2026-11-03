@@ -11,7 +11,7 @@ Install Node.js 22 LTS and pnpm 11. Then from the repository root:
     pnpm -r lint
     pnpm -r test
 
-Phase 1 provides the random-bot simulator: `pnpm sim --games 10000 --seed 1`.
+Phase 1 provides the random-bot simulator: `pnpm sim --games 10000 --seed 1`. The map matrix runs one random-bot game for each map style: `pnpm sim --map-matrix --games 1 --seed 1`.
 
 ## Online play (Phase 2)
 
@@ -24,6 +24,10 @@ Install dependencies, then run the server and web client in separate terminals:
 Open the Vite URL (normally `http://localhost:5173`). Choose the number of human seats and bots when creating a room, then share its invite URL so the selected humans can join before the host starts. Base games have three or four total seats, so solo games need two or three bots and rooms with four humans cannot add bots. The game server listens on port 3000 and keeps SQLite action logs in `dimat.sqlite` (override with `DIMAT_DB`). Seat tokens are stored by the browser for reconnect. For a container deployment, review `compose.yaml`, then run `docker compose up --build`; the web entry point is port 8080. The example systemd unit and Tailscale/firewall notes are in `deploy/README.md`.
 
 In the build phase, the active player can use **Ruilen** to offer resource bundles to selected players. Recipients can accept, decline, or make one counter-offer; bots respond to offers directed to them. Bank and harbor trades remain immediate. Domestic-trade bundle, consent, and counter-offer details are project assumptions documented in `docs/DECISIONS.md`.
+
+### Maps
+
+The lobby accepts a six-character map code and displays a preview before room creation. Use **Map genereren of bewerken** to open the editor: generate seeded styles, adjust terrain/numbers/rivers/harbors, review validation, and save the complete map for a share code. A room stores the full map definition in its replay settings. The map API is `POST /api/maps` and `GET /api/maps/<code>`.
 
 ### Local debug mode
 

@@ -1,16 +1,24 @@
 import { connectedComponents, key, neighbor, oppositeSide } from './hex.js';
 import { vertexKey } from './build-board.js';
 import { RESOURCES, type MapDefinition, type MapTile, type ValidationResult } from './types.js';
+import { countOuterCoastEdges, harborTarget, scaleResourceCounts, scaleTokens } from './balance.js';
 
 export interface ValidateOptions {
   /** Custom (user made) maps get warnings instead of errors for balance rules. */
   custom?: boolean;
+  /** Skip start fairness checks for randomly balanced maps. */
+  balance?: 'random' | 'balanced';
+  /** Player count to use for fairness checks. Defaults to the map maximum. */
+  players?: number;
   /** Minimum tiles per region/island. Default 3. */
   minIslandSize?: number;
   /** Hard cap on land tiles. Default 150. */
   maxLandTiles?: number;
+  /** Maximum permitted score spread among fair starting spots. Default 5. */
+  startSpreadMax?: number;
 }
 export const DEFAULT_MAX_LAND_TILES = 150;
+export const START_SPREAD_MAX = 5;
 const KNOWN_KINDS = new Set<string>([...RESOURCES, 'desert', 'water', 'gold', 'fog']);
 const NUMBERS = new Set([2, 3, 4, 5, 6, 8, 9, 10, 11, 12]);
 
@@ -77,11 +85,38 @@ export const checkPlayers: Check = (def) => {
   return result;
 };
 
+export const checkCounts: Check = (def, options) => {
+  const result = none();
+  const landCount = landTiles(def).length;
+  if (landCount < 1 || landCount > DEFAULT_MAX_LAND_TILES) return result;
+  const players = options.players ?? def.players.max;
+  if (!Number.isInteger(players) || players < 2 || players > 8) return result;
+  const actual: Record<string, number> = Object.fromEntries([...RESOURCES, 'desert'].map(kind => [kind, 0]));
+  for (const tile of landTiles(def)) if (tile.kind in actual) actual[tile.kind] = actual[tile.kind]! + 1;
+  const expected = scaleResourceCounts(landCount, players);
+  const relaxed = options.custom || def.style === 'custom';
+  const report = relaxed ? result.warnings : result.errors;
+  for (const kind of [...RESOURCES, 'desert'] as const) {
+    const difference = Math.abs(actual[kind]! - expected[kind]);
+    if (relaxed ? difference > 1 : difference !== 0) report.push(`${kind} count is ${actual[kind]}, expected ${expected[kind]}${relaxed ? ' ±1' : ''}`);
+  }
+  const expectedTokens = scaleTokens(resourceTiles(def).length);
+  const actualTokens = resourceTiles(def).map(tile => tile.number).sort((a, b) => a! - b!);
+  if (!relaxed && JSON.stringify(actualTokens) !== JSON.stringify([...expectedTokens].sort((a, b) => a - b))) {
+    result.errors.push('number token distribution does not match the scaled token supply');
+  }
+  return result;
+};
+
+function resourceTiles(def: MapDefinition): MapTile[] {
+  return landTiles(def).filter(tile => (RESOURCES as readonly string[]).includes(tile.kind));
+}
+
 export const checkNoAdjacentRed: Check = (def, options) => {
   const result = none();
   const byKey = tileIndex(def);
   const red = (tile: MapTile | undefined) => !!tile && (tile.number === 6 || tile.number === 8);
-  const report = options.custom ? result.warnings : result.errors;
+  const report = options.custom || def.style === 'custom' ? result.warnings : result.errors;
   for (const tile of def.tiles) {
     if (!red(tile)) continue;
     for (const side of [0, 1, 2]) { // each pair once
@@ -169,10 +204,80 @@ export const checkHarbors: Check = (def) => {
       usedVertices.add(vertex);
     }
   }
+  const expected = harborTarget(countOuterCoastEdges(def));
+  if (def.harbors.length !== expected) {
+    const report = def.style === 'custom' ? result.warnings : result.errors;
+    report.push(`map has ${def.harbors.length} harbors, expected ${expected}`);
+  }
   return result;
 };
 
-const CHECKS: readonly Check[] = [checkShape, checkPlayers, checkNoAdjacentRed, checkConnectivity, checkIslands, checkRivers, checkHarbors];
+export const checkStartSpots: Check = (def, options) => {
+  const result = none();
+  if (options.balance !== 'balanced') return result;
+  const players = options.players ?? def.players.max;
+  const vertices = new Map<string, { neighbors: Set<string>; resources: Set<string>; pips: number }>();
+  const connect = (a: string, b: string) => {
+    vertices.get(a)!.neighbors.add(b);
+    vertices.get(b)!.neighbors.add(a);
+  };
+  for (const tile of landTiles(def)) {
+    const corners = Array.from({ length: 6 }, (_, corner) => vertexKey(tile.q, tile.r, corner));
+    const pips = tile.number === null ? 0 : 6 - Math.abs(7 - tile.number);
+    for (const vertex of corners) {
+      const current = vertices.get(vertex) ?? { neighbors: new Set<string>(), resources: new Set<string>(), pips: 0 };
+      current.pips += pips;
+      if ((RESOURCES as readonly string[]).includes(tile.kind)) current.resources.add(tile.kind);
+      vertices.set(vertex, current);
+    }
+    for (let side = 0; side < 6; side++) connect(corners[side]!, corners[(side + 1) % 6]!);
+  }
+  const candidates = [...vertices].map(([id, vertex]) => ({
+    id,
+    score: vertex.pips + (vertex.resources.size >= 3 ? 1 : 0),
+    neighbors: vertex.neighbors
+  })).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  const selectSpots = (spots: typeof candidates, limit: number) => {
+    const selected: typeof candidates = [];
+    for (const candidate of spots) {
+      if (selected.some(item => item.id === candidate.id || item.neighbors.has(candidate.id))) continue;
+      selected.push(candidate);
+      if (selected.length === limit) break;
+    }
+    return selected;
+  };
+  const minimum = players * 2 + 2;
+  if (selectSpots(candidates, minimum).length < minimum) result.errors.push(`fewer than ${minimum} non-adjacent legal start vertices`);
+  const fairSpots = selectSpots(candidates, players * 2);
+  if (fairSpots.length === players * 2) {
+    const scores = fairSpots.map(spot => spot.score);
+    const spread = Math.max(...scores) - Math.min(...scores);
+    const maxSpread = options.startSpreadMax ?? START_SPREAD_MAX;
+    if (spread > maxSpread) result.errors.push(`fair start spot spread ${spread} exceeds ${maxSpread}`);
+  }
+  if (selectSpots(candidates.filter(candidate => candidate.score >= 8), minimum).length < minimum) {
+    result.errors.push(`fewer than ${minimum} non-adjacent start vertices have score 8 or higher`);
+  }
+  return result;
+};
+
+export const checkDesertPlacement: Check = (def) => {
+  const result = none();
+  const byKey = tileIndex(def);
+  for (const desert of def.tiles.filter(tile => tile.kind === 'desert')) {
+    let adjacentDeserts = 0, adjacentNonDeserts = 0;
+    for (let side = 0; side < 6; side++) {
+      const adjacent = byKey.get(key(neighbor(desert, side)));
+      if (adjacent?.kind === 'desert') adjacentDeserts++;
+      else if (adjacent && adjacent.kind !== 'water') adjacentNonDeserts++;
+    }
+    if (adjacentDeserts > 2) result.errors.push(`desert at ${key(desert)} touches ${adjacentDeserts} other deserts (maximum 2)`);
+    if (adjacentNonDeserts === 0) result.errors.push(`desert at ${key(desert)} has no non-desert land neighbor`);
+  }
+  return result;
+};
+
+const CHECKS: readonly Check[] = [checkShape, checkPlayers, checkCounts, checkNoAdjacentRed, checkConnectivity, checkIslands, checkRivers, checkHarbors, checkStartSpots, checkDesertPlacement];
 
 export function validateMap(def: MapDefinition, options: ValidateOptions = {}): ValidationResult {
   const errors: string[] = [];
@@ -188,4 +293,3 @@ export function validateMap(def: MapDefinition, options: ValidateOptions = {}): 
   }
   return { ok: errors.length === 0, errors, warnings };
 }
-

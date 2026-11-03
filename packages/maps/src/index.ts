@@ -1,9 +1,12 @@
 export * from './types.js';
 export * from './hex.js';
 export { hashSeed, makeRng, nextUint32, Rng } from './rng.js';
+export { BalanceError, assignNumbers, balanceResources, countOuterCoastEdges, harborTarget, placeHarbors, scaleResourceCounts, scaleTokens } from './balance.js';
+export { generateTerrain, GenerationError, type TerrainOptions, type TerrainResult, type TerrainStyle } from './generators.js';
+export { generateMap, type GenerateOptions } from './generate.js';
 export { buildBoard, cornerPoint, vertexKey, MapBuildError } from './build-board.js';
 export {
   validateMap, computeRegions, DEFAULT_MAX_LAND_TILES,
-  checkShape, checkPlayers, checkNoAdjacentRed, checkConnectivity, checkIslands, checkRivers, checkHarbors,
+  START_SPREAD_MAX, checkShape, checkPlayers, checkCounts, checkNoAdjacentRed, checkConnectivity, checkIslands, checkRivers, checkHarbors, checkStartSpots, checkDesertPlacement,
   type ValidateOptions
 } from './validate.js';

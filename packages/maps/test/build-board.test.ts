@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildBoard, MapBuildError, vertexKey } from '../src/build-board.js';
+import { createBoard } from '../../engine/src/board.js';
 import { discMap, finish } from './fixtures.js';
 
 describe('buildBoard', () => {
@@ -36,6 +37,32 @@ describe('buildBoard', () => {
     for (const edge of board.edges) {
       const [a, b] = edge.vertices.map(id => board.vertices[id]!) as [typeof board.vertices[number], typeof board.vertices[number]];
       expect(Math.hypot((a.x - b.x) * Math.sqrt(3), a.y - b.y)).toBeCloseTo(2, 6);
+    }
+  });
+  it('matches the legacy radius-2 board topology independent of graph ids', () => {
+    const mapped = buildBoard(discMap(2));
+    const legacy = createBoard(1).board;
+    expect(mapped.tiles).toHaveLength(legacy.tiles.length);
+    expect(mapped.vertices).toHaveLength(legacy.vertices.length);
+    expect(mapped.edges).toHaveLength(legacy.edges.length);
+    expect(mapped.edges.filter(edge => edge.kind === 'coast')).toHaveLength(30);
+
+    const vertexCoordinates = (board: typeof mapped, ids: number[]) =>
+      ids.map(id => `${board.vertices[id]!.x},${board.vertices[id]!.y}`).sort();
+    const legacyVertexCoordinates = (ids: number[]) =>
+      ids.map(id => `${legacy.vertices[id]!.x},${legacy.vertices[id]!.y}`).sort();
+    const mappedTiles = new Map(mapped.tiles.map(tile => [`${tile.q},${tile.r}`, tile]));
+    for (const tile of legacy.tiles) {
+      expect(vertexCoordinates(mapped, mappedTiles.get(`${tile.q},${tile.r}`)!.vertices))
+        .toEqual(legacyVertexCoordinates(tile.vertices));
+    }
+
+    const edgeKey = (board: typeof mapped, edge: typeof mapped.edges[number]) =>
+      edge.vertices.map(id => `${board.vertices[id]!.x},${board.vertices[id]!.y}`).sort().join('|');
+    const mappedEdges = new Map(mapped.edges.map(edge => [edgeKey(mapped, edge), edge.kind]));
+    for (const edge of legacy.edges) {
+      const key = legacyVertexCoordinates(edge.vertices).join('|');
+      expect(mappedEdges.get(key)).toBe(edge.tiles.length === 1 ? 'coast' : 'land');
     }
   });
   it('is deterministic', () => {

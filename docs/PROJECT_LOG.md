@@ -2,6 +2,21 @@
 
 Detailed, app-specific record of requests, implementation work, tests, simulator runs, and known gaps. Keep entries factual and add a new dated section for each substantive DiMaT task. Test summaries describe executed checks; the named test cases live in `docs/RULES_MATRIX.md` and `packages/*/test/`.
 
+## 2026-11-03 — Maps plan, steps A through C
+
+- **Request:** Execute the first dependency steps in `docs/MAPS_PLAN.md`.
+- **Work:** Verified the legacy board golden hashes for seeds 1, 2, 3, 42, and 12345; extended the maps foundation with axial-to-cube conversion, invalid radius guards, and a topology cross-check against the legacy radius-2 board. Added the generated/custom/preset/base map selection schema. Implemented scaled resource and number-token inventories, deterministic red-number assignment, local resource balancing, and spaced harbor placement that excludes interior lake coasts.
+- **Baseline:** `pnpm sim --games 1000 --seed 1` passed with 718,355 actions in 219,523 ms. The workspace passed recursive typecheck, lint, and tests at baseline.
+- **Verification after changes:** `packages/maps` typecheck, lint, and all 41 tests pass. The 68 engine tests, including all five golden hashes, pass.
+- **Remaining:** Delivery steps D through J (generators, bridges/engine, server, web editor, simulation matrix, and documentation) remain.
+
+## 2026-11-03 — Maps plan, steps D through J
+
+- **Work:** Completed all eight deterministic terrain generators and balancing, bridge rules and bot support, map settings in engine replay, SQLite map sharing and room integration, lobby preview, and a map generator/editor with validation and save. River style supports a main channel with a branching tributary.
+- **Verification:** All 63 maps tests pass, including 200-seed style/player matrices; all 74 engine tests, 22 protocol tests, 5 bot tests, 4 web tests, and 1 server test pass. Workspace typecheck and lint pass. The Playwright map workflow passes end-to-end for generation, editing, sharing, lobby preview, room creation, game start, and river rendering. The map-style bot matrix completes one game per style (8 games, 6,277 actions). Engine replay coverage replays an action on a map-backed game to the identical state. The required `pnpm sim --games 1000 --seed 1` completed successfully: 1,000 games and 718,355 actions.
+- **E2E test reliability:** Playwright API/web ports are now configurable with `E2E_API_PORT` and `E2E_WEB_PORT`, so the focused workflow can run without colliding with an existing local server. The room-flow test explicitly selects one human before creation.
+- **Known limits:** Map games are currently supported by the engine for 3–4 players. Islands remain separated by open water and need ships, which are deferred to Seafarers. River bridge cost and supply remain assumptions in `DECISIONS.md`.
+
 ## 2026-10-29 — Phase 0: workspace initialized
 
 - **Request:** Initialize `~/Developer/DiMaT`.

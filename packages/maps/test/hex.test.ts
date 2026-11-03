@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DIRECTIONS, connectedComponents, disc, distance, fromOffsetOddR, key, neighbor, neighbors, oppositeSide, ring, toOffsetOddR } from '../src/hex.js';
+import { DIRECTIONS, connectedComponents, disc, distance, fromOffsetOddR, key, neighbor, neighbors, oppositeSide, ring, toCube, toOffsetOddR } from '../src/hex.js';
 
 describe('hex math', () => {
   it('has six distinct neighbours at distance 1, and reciprocal sides', () => {
@@ -16,6 +16,10 @@ describe('hex math', () => {
     expect(distance(a, b)).toBe(distance(b, a));
     expect(distance(a, a)).toBe(0);
   });
+  it('converts axial coordinates to cube coordinates', () => {
+    expect(toCube({ q: 4, r: -7 })).toEqual({ x: 4, y: 3, z: -7 });
+    expect(toCube({ q: 0, r: 0 })).toEqual({ x: 0, y: 0, z: 0 });
+  });
   it('builds rings and discs of the right size, order and radius', () => {
     for (let radius = 0; radius <= 6; radius++) {
       const tiles = disc({ q: 0, r: 0 }, radius);
@@ -29,6 +33,10 @@ describe('hex math', () => {
       // ring is a closed walk: consecutive tiles touch
       for (let i = 0; i < edgeRing.length && radius > 0; i++) expect(distance(edgeRing[i]!, edgeRing[(i + 1) % edgeRing.length]!)).toBe(1);
     }
+    expect(() => ring({ q: 0, r: 0 }, -1)).toThrow(RangeError);
+    expect(() => ring({ q: 0, r: 0 }, 1.5)).toThrow(RangeError);
+    expect(() => disc({ q: 0, r: 0 }, -1)).toThrow(RangeError);
+    expect(() => disc({ q: 0, r: 0 }, 1.5)).toThrow(RangeError);
   });
   it('round-trips odd-r offset coordinates', () => {
     for (let row = -5; row <= 5; row++) for (let col = -5; col <= 5; col++) {

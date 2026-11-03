@@ -2,6 +2,13 @@
 
 This file **amends** `docs/MAP_GENERATOR_PLAN.md`. Where the two disagree, this file wins. Everything else in the older plan (hex math, RNG sub-streams, validators, balancing, replay compatibility, golden tests) still applies. The owner reads Dutch; code, comments and docs stay English.
 
+## 2026-11-03 progress
+
+- Steps A through C are implemented: legacy board hashes remain fixed; the baseline 1,000-game simulation is recorded; `packages/maps` provides deterministic geometry, board graph, river-aware schemas, validators, scaled inventories, balancing, and harbor placement.
+- Steps D and E are implemented: all eight terrain styles generate complete `MapDefinition` values, including a main river with a deterministic tributary; the engine supports connected bridges, shared road pieces, Longest Road, bot choices, and river rendering. The bridge cost and three-piece cap are assumptions recorded in `docs/DECISIONS.md`.
+- Steps F through I are implemented for the current 3–4-player base game: stored map definitions and scaled banks in engine settings; persistent map records with six-character share codes and room replay copies; lobby picker/preview; generation and editing UI with live validation and save.
+- Step J is implemented: 200-seed generation matrices, bridge/map tests, map-settings replay coverage, an end-to-end editor/share/room flow, and an eight-style random-bot matrix are green. Workspace typecheck, lint, tests, and the 1,000-game baseline simulation are green.
+
 ## 1. Owner decisions (from the Q&A on 2026-11-03)
 
 1. **Map kinds** the generator must produce: islands with a river, a very large map with irregular shapes, the classic compact map, and a fully random (seeded) map.

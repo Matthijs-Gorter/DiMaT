@@ -5,7 +5,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { Worker } from 'node:worker_threads';
 import { apply, createGame, legalActions, replayGame, validateTradeAction, viewFor, type GameAction, type GameEvent, type GameSettings, type GameState, type PlayerView } from '@dimat/engine';
 import { chooseRandomAction } from '@dimat/bots';
-import { clientMessageSchema, createRoomSchema, type BotStatus, type RoomLifecycle, type ServerMessage } from '@dimat/protocol';
+import { mapDefinitionSchema, mapCodeSchema, clientMessageSchema, createRoomSchema, type BotStatus, type MapDefinitionInput, type RoomLifecycle, type ServerMessage } from '@dimat/protocol';
+import { validateMap } from '@dimat/maps';
 
 type Seat={playerId:string;displayName:string;token:string;bot:boolean;level:0|1|2;lastSequence:number;lastChatAt?:number;botStatus?:BotStatus['status'];botReason?:string;decisionMs?:number;socket?:WebSocket};
 type Room={id:string;state:GameState;settings:GameSettings;actions:GameAction[];recentEvents:GameEvent[];seats:Seat[];lifecycle:RoomLifecycle;seed:number};
@@ -17,22 +18,66 @@ class RoomError extends Error {
 
 const db=new DatabaseSync(process.env.DIMAT_DB??'dimat.sqlite');
 db.exec("CREATE TABLE IF NOT EXISTS games (id TEXT PRIMARY KEY, seed INTEGER NOT NULL, settings TEXT NOT NULL, actions TEXT NOT NULL, seats TEXT NOT NULL DEFAULT '[]', lifecycle TEXT NOT NULL DEFAULT 'lobby', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+db.exec("CREATE TABLE IF NOT EXISTS maps (id TEXT PRIMARY KEY, share_code TEXT NOT NULL UNIQUE, definition TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
 try{db.exec("ALTER TABLE games ADD COLUMN lifecycle TEXT NOT NULL DEFAULT 'lobby'");}catch(error){if(!String(error).includes('duplicate column name'))throw error;}
 const rooms=new Map<string,Room>();
 const activeBotRooms=new Set<string>();
 const token=()=>randomBytes(24).toString('base64url');
+const MAP_CODE_ALPHABET='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const newMapCode=()=>[...randomBytes(6)].map(byte=>MAP_CODE_ALPHABET[byte&31]!).join('');
 const app=Fastify({logger:true});
 
 app.get('/health',async()=>({ok:true}));
+app.post('/api/maps',async(req,reply)=>{
+  const parsed=mapDefinitionSchema.safeParse(req.body);
+  if(!parsed.success)return reply.code(400).send({code:'INVALID_MAP_SCHEMA',message:'Map data is malformed.',details:parsed.error.flatten()});
+  const definition:MapDefinitionInput={...parsed.data,id:randomUUID()};
+  const validation=validateMap(definition,{
+    custom:definition.style==='custom',
+    balance:definition.meta.options?.balance==='balanced'?'balanced':'random',
+    players:definition.players.max
+  });
+  if(!validation.ok)return reply.code(400).send({code:'INVALID_MAP',message:'Map validation failed.',details:{errors:validation.errors,warnings:validation.warnings}});
+  const mapId=definition.id;
+  for(let attempt=0;attempt<10;attempt++){
+    const shareCode=newMapCode();
+    try{
+      db.prepare('INSERT INTO maps(id,share_code,definition) VALUES(?,?,?)').run(mapId,shareCode,JSON.stringify(definition));
+      return reply.code(201).send({shareCode,map:definition,warnings:validation.warnings});
+    }catch(error){
+      if(!String(error).includes('UNIQUE constraint failed: maps.share_code'))throw error;
+    }
+  }
+  throw new Error('Could not allocate a unique map share code after 10 attempts.');
+});
+app.get('/api/maps/:code',async(req,reply)=>{
+  const params=req.params as {code:string},parsed=mapCodeSchema.safeParse(params.code);
+  if(!parsed.success)return reply.code(400).send({code:'INVALID_MAP_CODE',message:'Map share codes must be six uppercase letters or digits.'});
+  const row=db.prepare('SELECT definition FROM maps WHERE share_code=?').get(parsed.data) as {definition:string}|undefined;
+  if(!row)return reply.code(404).send({code:'MAP_NOT_FOUND',message:'Map not found.'});
+  return {map:mapDefinitionSchema.parse(JSON.parse(row.definition))};
+});
 app.post('/api/rooms',async(req,reply)=>{
   const parsed=createRoomSchema.safeParse(req.body);
   if(!parsed.success)return reply.code(400).send({code:'INVALID_ROOM_OPTIONS',message:'Room settings are invalid.',details:parsed.error.flatten()});
-  const {displayName,humanCount,botCount}=parsed.data;
+  const {displayName,humanCount,botCount,mapCode}=parsed.data;
   const seed=parsed.data.seed??randomBytes(4).readUInt32LE();
   const id=randomUUID().slice(0,8);
   const playerCount=humanCount+botCount;
   if(playerCount!==3&&playerCount!==4)throw new Error('Room validation returned an unsupported player count.');
-  const settings:GameSettings={playerCount,victoryTarget:10};
+  let mapDefinition:MapDefinitionInput|undefined;
+  if(mapCode){
+    const row=db.prepare('SELECT definition FROM maps WHERE share_code=?').get(mapCode) as {definition:string}|undefined;
+    if(!row)return reply.code(404).send({code:'MAP_NOT_FOUND',message:'The selected map code does not exist.'});
+    mapDefinition=mapDefinitionSchema.parse(JSON.parse(row.definition));
+    if(playerCount<mapDefinition.players.min||playerCount>mapDefinition.players.max){
+      return reply.code(400).send({code:'MAP_PLAYER_COUNT',message:'The selected map does not support this room size.'});
+    }
+    if(mapDefinition.tiles.some(tile=>tile.kind==='gold'||tile.kind==='fog')){
+      return reply.code(400).send({code:'UNSUPPORTED_MAP_FEATURE',message:'This engine version does not support gold or fog map tiles.'});
+    }
+  }
+  const settings:GameSettings={playerCount,victoryTarget:10,...(mapDefinition?{map:mapDefinition}:{})};
   const seats:Seat[]=[];
   for(let i=0;i<humanCount;i++)seats.push({playerId:`p${i}`,displayName:i===0?displayName:'',token:token(),bot:false,level:0,lastSequence:-1});
   for(let i=0;i<botCount;i++){

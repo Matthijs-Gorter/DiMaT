@@ -18,7 +18,7 @@ export function chooseRandomFromActions(actions:readonly GameAction[],seed:numbe
   const draw=randomInt(seed>>>0||1,100).value;
   if(scoreActions.length&&draw<65)return scoreActions[randomInt((seed^0x9e3779b9)>>>0||1,scoreActions.length).value]!;
   const endTurn=groups.get('endTurn');
-  const construction=['buildRoad','playRoadBuilding','playKnight','playYearOfPlenty','playMonopoly','maritimeTrade'];
+  const construction=['buildRoad','buildBridge','playRoadBuilding','playKnight','playYearOfPlenty','playMonopoly','maritimeTrade'];
   const other=construction.flatMap(type=>groups.get(type)??[]);
   if(other.length&&draw<90)return other[randomInt((seed^0x85ebca6b)>>>0||1,other.length).value]!;
   if(endTurn)return endTurn[0]!;

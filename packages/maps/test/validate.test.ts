@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { key, neighbor } from '../src/hex.js';
-import { checkHarbors, checkIslands, checkNoAdjacentRed, checkRivers, checkShape, computeRegions, validateMap } from '../src/validate.js';
+import { checkCounts, checkDesertPlacement, checkHarbors, checkIslands, checkNoAdjacentRed, checkRivers, checkShape, checkStartSpots, computeRegions, validateMap } from '../src/validate.js';
+import { assignNumbers } from '../src/balance.js';
+import { Rng } from '../src/rng.js';
 import type { MapDefinition, MapRiverEdge } from '../src/types.js';
 import { discMap, finish } from './fixtures.js';
 
@@ -56,7 +58,7 @@ describe('checkShape', () => {
 describe('checkNoAdjacentRed', () => {
   const adjacentReds = () => withTile(withTile(discMap(2), 1, 0, { kind: 'brick', number: 6 }), 2, 0, { kind: 'ore', number: 8 });
   it('is an error for generated maps and a warning for custom maps', () => {
-    const def = adjacentReds();
+    const def = { ...adjacentReds(), style: 'standard' as const };
     expect(checkNoAdjacentRed(def, {}).errors.length).toBe(1);
     const custom = checkNoAdjacentRed(def, { custom: true });
     expect(custom.errors).toEqual([]);
@@ -65,6 +67,63 @@ describe('checkNoAdjacentRed', () => {
   it('accepts 6 and 8 that do not touch', () => {
     const def = withTile(withTile(discMap(2), 1, 0, { kind: 'brick', number: 6 }), -1, 0, { kind: 'ore', number: 8 });
     expect(checkNoAdjacentRed(def, {}).errors).toEqual([]);
+  });
+});
+
+describe('checkCounts', () => {
+  it('checks generated resource and number distributions exactly', () => {
+    const base = discMap(2);
+    const resourceKinds = ['brick', 'brick', 'brick', 'lumber', 'lumber', 'lumber', 'lumber', 'wool', 'wool', 'wool', 'wool', 'grain', 'grain', 'grain', 'grain', 'ore', 'ore', 'ore'] as const;
+    let resourceIndex = 0;
+    const tiles = base.tiles.map(tile => tile.kind === 'desert' ? tile : { ...tile, kind: resourceKinds[resourceIndex++]! });
+    const numbered = assignNumbers(tiles, new Rng(123));
+    const generated = { ...base, style: 'standard' as const, tiles: numbered };
+    expect(checkCounts(generated, {}).errors).toEqual([]);
+    const badTokens = { ...generated, tiles: generated.tiles.map(tile => tile.kind === 'desert' ? tile : { ...tile, number: 2 }) };
+    expect(checkCounts(badTokens, {}).errors).toContain('number token distribution does not match the scaled token supply');
+  });
+
+  it('allows custom terrain counts within one tile and warns about relaxed counts', () => {
+    const base = discMap(2);
+    const custom = {
+      ...base,
+      tiles: base.tiles.map((tile, index) => index === 1 ? { ...tile, kind: 'brick' as const } : tile)
+    };
+    const result = checkCounts(custom, {});
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).not.toEqual([]);
+  });
+});
+
+describe('checkStartSpots', () => {
+  it('skips fairness checks for random maps and checks the configured player count for balanced maps', () => {
+    const base = discMap(2);
+    expect(checkStartSpots(base, { balance: 'random' })).toEqual({ errors: [], warnings: [] });
+    const rich = {
+      ...base,
+      tiles: base.tiles.map(tile => (tile.kind === 'desert' ? tile : { ...tile, number: 6 }))
+    };
+    expect(checkStartSpots(rich, { balance: 'balanced', players: 3 }).errors).toEqual([]);
+    expect(checkStartSpots(base, { balance: 'balanced', players: 8 }).errors.length).toBeGreaterThan(0);
+  });
+});
+
+describe('checkDesertPlacement', () => {
+  it('rejects clusters of more than two adjacent deserts', () => {
+    const base = discMap(2);
+    const desertKeys = new Set(['0,0', '1,0', '0,1', '1,-1']);
+    const tiles = base.tiles.map(tile => desertKeys.has(key(tile))
+      ? { ...tile, kind: 'desert' as const, number: null }
+      : tile);
+    expect(checkDesertPlacement({ ...base, tiles }, {}).errors.join()).toMatch(/maximum 2/);
+  });
+
+  it('requires each desert to touch at least one other land tile', () => {
+    const base = discMap(1);
+    const tiles = base.tiles.map(tile => tile.q === 0 && tile.r === 0
+      ? { ...tile, kind: 'desert' as const, number: null }
+      : { ...tile, kind: 'water' as const, number: null });
+    expect(checkDesertPlacement({ ...base, tiles }, {}).errors.join()).toMatch(/no non-desert land neighbor/);
   });
 });
 

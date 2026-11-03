@@ -1,11 +1,17 @@
 import { createBoard, adjacentVertices } from './board.js';
 import { randomInt, shuffle } from './random.js';
 import { RESOURCES, type DevCard, type GameAction, type GameEvent, type GameSettings, type GameState, type Player, type PlayerView, type ReplayInput, type Resource, type ResourceSet, type Transition, type TradeOffer } from './types.js';
+import { buildBoard, validateMap } from '@dimat/maps';
+import type { Board } from './types.js';
 
 const ZERO = (): ResourceSet => ({brick:0,lumber:0,wool:0,grain:0,ore:0});
 const START_BANK = (): ResourceSet => ({brick:19,lumber:19,wool:19,grain:19,ore:19});
+const mapBank = (landTileCount: number): ResourceSet => ({
+  brick:landTileCount,lumber:landTileCount,wool:landTileCount,grain:landTileCount,ore:landTileCount
+});
 const COSTS = {
   road:{brick:1,lumber:1}, settlement:{brick:1,lumber:1,wool:1,grain:1},
+  bridge:{brick:2,lumber:2},
   city:{grain:2,ore:3}, developmentCard:{wool:1,grain:1,ore:1},
 } as const;
 const DEV_CARDS: DevCard[] = [
@@ -24,12 +30,34 @@ export function createGame(seed:number,settings:Partial<GameSettings>={}):GameSt
   if(settings.victoryTarget!==undefined&&(!Number.isInteger(settings.victoryTarget)||settings.victoryTarget<1))throw new RangeError('victoryTarget must be a positive integer');
   if(playerCount!==3&&playerCount!==4)throw new RangeError('The base game supports three or four players');
   const normalizedSeed=seed>>>0||0x9e3779b9;
-  const {board,rngState:boardRng}=createBoard(normalizedSeed);
+  const mapDefinition=settings.map;
+  let board:Board;
+  let boardRng:number;
+  let bank=START_BANK();
+  if(mapDefinition){
+    if(playerCount<mapDefinition.players.min||playerCount>mapDefinition.players.max)throw new RangeError(`Map ${mapDefinition.id} does not support ${playerCount} players`);
+    const validation=validateMap(mapDefinition,{
+      custom:mapDefinition.style==='custom',
+      balance:mapDefinition.meta.options?.balance==='balanced'?'balanced':'random',
+      players:playerCount
+    });
+    if(!validation.ok)throw new RangeError(`Map ${mapDefinition.id} is invalid: ${validation.errors.join('; ')}`);
+    if(mapDefinition.tiles.some(tile=>tile.kind==='gold'||tile.kind==='fog'))throw new RangeError('The engine does not support gold or fog map tiles');
+    const built=buildBoard(mapDefinition);
+    if(built.desertTile===null)throw new RangeError('Map must contain a desert for the robber starting position');
+    board={...built,desertTile:built.desertTile};
+    boardRng=normalizedSeed;
+    bank=mapBank(mapDefinition.tiles.filter(tile=>tile.kind!=='water').length);
+  }else{
+    const generated=createBoard(normalizedSeed);
+    board=generated.board;
+    boardRng=generated.rngState;
+  }
   const deck=shuffle(DEV_CARDS,boardRng);
-  const players:Player[]=Array.from({length:playerCount},(_,i)=>({id:asId(i),resources:ZERO(),devCards:[],knightsPlayed:0,roadsLeft:15,settlementsLeft:5,citiesLeft:4,revealedVictoryPoints:0}));
+  const players:Player[]=Array.from({length:playerCount},(_,i)=>({id:asId(i),resources:ZERO(),devCards:[],knightsPlayed:0,roadsLeft:15,bridgesLeft:3,settlementsLeft:5,citiesLeft:4,revealedVictoryPoints:0}));
   return {
-    version:1,seed:normalizedSeed,rngState:deck.state,settings:{playerCount,victoryTarget:settings.victoryTarget??10},board,players,
-    buildings:Array(board.vertices.length).fill(null),roads:Array(board.edges.length).fill(null),bank:START_BANK(),devDeck:deck.items,playedDevCards:[],
+    version:1,seed:normalizedSeed,rngState:deck.state,settings:{playerCount,victoryTarget:settings.victoryTarget??10,...(mapDefinition?{map:structuredClone(mapDefinition)}:{})},board,players,
+    buildings:Array(board.vertices.length).fill(null),roads:Array(board.edges.length).fill(null),bank,devDeck:deck.items,playedDevCards:[],
     phase:'setupSettlement',activePlayer:0,setupOrder:[...Array.from({length:playerCount},(_,i)=>i),...Array.from({length:playerCount},(_,i)=>playerCount-1-i)],setupPosition:0,setupRoadVertex:null,
     pendingDiscards:[],afterRobberPhase:'build',robberTile:board.desertTile,turnNumber:0,hasPlayedDevCard:false,longestRoadHolder:null,largestArmyHolder:null,winner:null,lastRoll:null,
     tradeOffer:null,tradeCounterUsed:false,nextTradeOfferId:1,
@@ -125,7 +153,7 @@ function generateLegalActions(s:GameState,playerId:string,options:{includeTrades
     for(let v=0;v<s.board.vertices.length;v++)if(legalSettlement(s,p,v,true))out.push({...base,type:'placeSettlement',vertex:v});
   }else if(s.phase==='setupRoad'){
     if(p!==s.setupOrder[s.setupPosition]||s.setupRoadVertex===null)return[];
-    for(const eid of s.board.vertices[s.setupRoadVertex]!.edges)if(!s.roads[eid])out.push({...base,type:'placeRoad',edge:eid});
+    for(const eid of s.board.vertices[s.setupRoadVertex]!.edges)if(!s.roads[eid]&&s.board.edges[eid]!.kind!=='river')out.push({...base,type:'placeRoad',edge:eid});
   }else if(s.phase==='discard'){
     if(s.pendingDiscards[0]!==p)return[];const amount=Math.floor(sum(card.resources)/2);
     for(const resources of combos(s,p,amount))out.push({...base,type:'discard',resources});
@@ -140,14 +168,15 @@ function generateLegalActions(s:GameState,playerId:string,options:{includeTrades
     if(victoryPointActionAvailable(s,p))out.push({...base,type:'revealVictoryPoint'});
   }else if(s.phase==='build'){
     if(p===s.activePlayer){out.push({...base,type:'endTurn'});if(victoryPointActionAvailable(s,p))out.push({...base,type:'revealVictoryPoint'});
-    if(card.roadsLeft>0&&canPay(card,COSTS.road))for(let eid=0;eid<s.board.edges.length;eid++)if(edgeCanExtend(s,p,eid))out.push({...base,type:'buildRoad',edge:eid});
+    if(card.roadsLeft>0&&canPay(card,COSTS.road))for(let eid=0;eid<s.board.edges.length;eid++)if(s.board.edges[eid]!.kind!=='river'&&edgeCanExtend(s,p,eid))out.push({...base,type:'buildRoad',edge:eid});
+    if(card.roadsLeft>0&&card.bridgesLeft>0&&canPay(card,COSTS.bridge))for(let eid=0;eid<s.board.edges.length;eid++)if(s.board.edges[eid]!.kind==='river'&&edgeCanExtend(s,p,eid))out.push({...base,type:'buildBridge',edge:eid});
     if(card.settlementsLeft>0&&canPay(card,COSTS.settlement))for(let v=0;v<s.board.vertices.length;v++)if(legalSettlement(s,p,v))out.push({...base,type:'buildSettlement',vertex:v});
     if(card.citiesLeft>0&&canPay(card,COSTS.city))for(let v=0;v<s.board.vertices.length;v++)if(s.buildings[v]?.owner===p&&s.buildings[v]?.kind==='settlement')out.push({...base,type:'buildCity',vertex:v});
     if(s.devDeck.length&&canPay(card,COSTS.developmentCard))out.push({...base,type:'buyDevelopmentCard'});
     if(!s.hasPlayedDevCard){
       if(ownDev(s,p,'knight'))for(const a of generateLegalActions({...s,phase:'roll'},playerId,{includeTrades:false}))if(a.type==='playKnight')out.push(a);
       if(ownDev(s,p,'roadBuilding')){
-        const edges=s.board.edges.map((e)=>e.id).filter(e=>edgeCanExtend(s,p,e));if(edges.length&&card.roadsLeft>0){for(const edge of edges)out.push({...base,type:'playRoadBuilding',edges:[edge]});if(card.roadsLeft>1){for(const first of edges){const simulated=structuredClone(s);simulated.roads[first]={owner:p};for(const second of s.board.edges.map(e=>e.id))if(second!==first&&edgeCanExtend(simulated,p,second))out.push({...base,type:'playRoadBuilding',edges:[first,second]});}}}
+        const edges=s.board.edges.map(e=>e.id).filter(e=>s.board.edges[e]!.kind!=='river'&&edgeCanExtend(s,p,e));if(edges.length&&card.roadsLeft>0){for(const edge of edges)out.push({...base,type:'playRoadBuilding',edges:[edge]});if(card.roadsLeft>1){for(const first of edges){const simulated=structuredClone(s);simulated.roads[first]={owner:p};for(const second of s.board.edges.map(e=>e.id))if(second!==first&&s.board.edges[second]!.kind!=='river'&&edgeCanExtend(simulated,p,second))out.push({...base,type:'playRoadBuilding',edges:[first,second]});}}}
       }
       if(ownDev(s,p,'yearOfPlenty'))for(const a of RESOURCES)for(const b of RESOURCES)if(s.bank[a]>0&&(a===b?s.bank[a]>1:s.bank[b]>0))out.push({...base,type:'playYearOfPlenty',resources:[a,b]});
       if(ownDev(s,p,'monopoly'))for(const resource of RESOURCES)out.push({...base,type:'playMonopoly',resource});
@@ -206,7 +235,7 @@ export function validateTradeAction(state:GameState,action:GameAction):boolean{
 export function apply(state:GameState,action:GameAction):Transition {
   const legal=generateLegalActions(state,action.playerId,{includeMaritimeTrade:action.type==='maritimeTrade'});if(!legal.some(a=>canonical(a)===canonical(action))&&!validateTradeAction(state,action))throw new Error(`Illegal action ${action.type} for ${action.playerId} during ${state.phase}`);
   const s=structuredClone(state);const events:GameEvent[]=[];const p=ownIndex(s,action.playerId);const player=s.players[p]!;
-  if(s.tradeOffer&&(action.type==='buildRoad'||action.type==='buildSettlement'||action.type==='buildCity'||action.type==='endTurn')){
+  if(s.tradeOffer&&(action.type==='buildRoad'||action.type==='buildBridge'||action.type==='buildSettlement'||action.type==='buildCity'||action.type==='endTurn')){
     events.push({type:'tradeCancelled',playerId:action.playerId,offerId:s.tradeOffer.id,reason:action.type==='endTurn'?'turn-ended':'built'});s.tradeOffer=null;s.tradeCounterUsed=false;
   }
   switch(action.type){
@@ -238,6 +267,9 @@ export function apply(state:GameState,action:GameAction):Transition {
     }
     case 'buildRoad': {
       payResources(s,p,COSTS.road,events,'build');s.roads[action.edge]={owner:p};player.roadsLeft--;recomputeAwards(s);events.push({type:'roadBuilt',playerId:player.id,edge:action.edge});break;
+    }
+    case 'buildBridge': {
+      payResources(s,p,COSTS.bridge,events,'bridge');s.roads[action.edge]={owner:p};player.roadsLeft--;player.bridgesLeft--;recomputeAwards(s);events.push({type:'bridgeBuilt',playerId:player.id,edge:action.edge});break;
     }
     case 'buildSettlement': {
       payResources(s,p,COSTS.settlement,events,'build');s.buildings[action.vertex]={owner:p,kind:'settlement'};player.settlementsLeft--;recomputeAwards(s);events.push({type:'settlementBuilt',playerId:player.id,vertex:action.vertex});break;
@@ -310,7 +342,7 @@ function removeDev(player:Player,kind:DevCard,turn:number){const i=player.devCar
 export function viewFor(s:GameState,playerId:string):PlayerView {
   const p=ownIndex(s,playerId);if(p<0)throw new Error(`Unknown player ${playerId}`);
   return {playerId,phase:s.phase,activePlayerId:s.players[s.activePlayer]!.id,turnNumber:s.turnNumber,hasPlayedDevCard:s.hasPlayedDevCard,bank:{...s.bank},developmentCardsRemaining:s.devDeck.length,seed:s.seed,settings:{...s.settings},
-    players:s.players.map((pl,i)=>({id:pl.id,resourceCount:sum(pl.resources),developmentCardCount:pl.devCards.length,visibleVictoryPoints:score(s,i)-pl.devCards.filter(c=>c.kind==='victoryPoint').length,roadsLeft:pl.roadsLeft,settlementsLeft:pl.settlementsLeft,citiesLeft:pl.citiesLeft,knightsPlayed:pl.knightsPlayed,longestRoadLength:longestRoadLength(s,i),hasLongestRoad:s.longestRoadHolder===i,hasLargestArmy:s.largestArmyHolder===i})),
+    players:s.players.map((pl,i)=>({id:pl.id,resourceCount:sum(pl.resources),developmentCardCount:pl.devCards.length,visibleVictoryPoints:score(s,i)-pl.devCards.filter(c=>c.kind==='victoryPoint').length,roadsLeft:pl.roadsLeft,bridgesLeft:pl.bridgesLeft,settlementsLeft:pl.settlementsLeft,citiesLeft:pl.citiesLeft,knightsPlayed:pl.knightsPlayed,longestRoadLength:longestRoadLength(s,i),hasLongestRoad:s.longestRoadHolder===i,hasLargestArmy:s.largestArmyHolder===i})),
     ownResources:{...s.players[p]!.resources},ownDevelopmentCards:structuredClone(s.players[p]!.devCards),buildings:structuredClone(s.buildings),roads:structuredClone(s.roads),    board:structuredClone(s.board),robberTile:s.robberTile,tradeOffer:structuredClone(s.tradeOffer),legalActions:legalActions(s,playerId),winnerId:s.winner===null?null:s.players[s.winner]!.id,lastRoll:s.lastRoll?([...s.lastRoll] as [number,number]):null};
 }
 export function replayGame(input:ReplayInput):GameState {let state=createGame(input.seed,input.settings);for(const action of input.actions)state=apply(state,action).state;return state;}

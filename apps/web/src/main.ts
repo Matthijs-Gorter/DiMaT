@@ -1,6 +1,8 @@
 import type { GameAction, GameEvent, PlayerView, Resource } from '@dimat/engine';
 import type { BotStatus, RoomLifecycle, ServerMessage } from '@dimat/protocol';
+import { cornerPoint, type MapDefinition } from '@dimat/maps';
 import { findLegalDiscardAction } from './discard-action.js';
+import { mountMapEditor } from './map-editor.js';
 import './style.css';
 import './game-ui.css';
 
@@ -190,10 +192,44 @@ function shell(){
   const debug=element('button',debugEnabled?'selected':'','Debug');debug.setAttribute('aria-pressed',String(debugEnabled));debug.onclick=()=>{debugEnabled=!debugEnabled;const url=new URL(location.href);if(debugEnabled)url.searchParams.set('debug','1');else url.searchParams.delete('debug');history.replaceState({},'',url);render();void refreshDebugData();};
   header.append(theme,debug);root.append(header);const main=element('main');root.append(main);return main;
 }
+function showMapPreview(host:HTMLElement,map:MapDefinition){
+  const svg=svgElement('svg'),colors:Record<string,string>={brick:'#b86550',lumber:'#4f8d59',wool:'#a7c77b',grain:'#e2bc55',ore:'#74828b',desert:'#d9b880',water:'#468fb5',gold:'#e9cf56',fog:'#99a5ad'};
+  const point=(q:number,r:number,corner:number):[number,number]=>{const [x,y]=cornerPoint(q,r,corner);return [x*Math.sqrt(3),y];};
+  const vertices=map.tiles.flatMap(tile=>Array.from({length:6},(_,corner)=>point(tile.q,tile.r,corner)));
+  const xs=vertices.map(([x])=>x),ys=vertices.map(([,y])=>y),left=Math.min(...xs)-.5,top=Math.min(...ys)-.5,width=Math.max(...xs)-Math.min(...xs)+1,height=Math.max(...ys)-Math.min(...ys)+1;
+  svg.setAttribute('viewBox',`${left} ${top} ${width} ${height}`);svg.setAttribute('role','img');svg.setAttribute('aria-label',`Voorbeeld van map ${map.name}`);svg.classList.add('map-preview-board');
+  for(const tile of map.tiles){
+    const polygon=svgElement('polygon'),corners=Array.from({length:6},(_,corner)=>point(tile.q,tile.r,corner));
+    polygon.setAttribute('points',corners.map(([x,y])=>`${x},${y}`).join(' '));polygon.setAttribute('fill',colors[tile.kind]??'#888');polygon.setAttribute('stroke','#17232b');polygon.setAttribute('stroke-width','.08');svg.append(polygon);
+  }
+  for(const river of map.rivers){
+    const a=point(river.tile.q,river.tile.r,river.side),b=point(river.tile.q,river.tile.r,(river.side+1)%6),line=svgElement('line');
+    line.setAttribute('x1',String(a[0]));line.setAttribute('y1',String(a[1]));line.setAttribute('x2',String(b[0]));line.setAttribute('y2',String(b[1]));line.setAttribute('stroke','#b7edff');line.setAttribute('stroke-width','.16');svg.append(line);
+  }
+  host.replaceChildren(svg);
+}
 function lobby(message='Maak een kamer of gebruik een uitnodigingslink.'){
   const main=shell(),card=element('section','card lobby');
   card.append(element('h1','','Speel alleen of samen'),element('p','muted',message));
   const name=element('input');name.placeholder='Je naam';name.maxLength=32;name.value=localStorage.getItem('dimat-name')??'';
+  const mapCodeInput=element('input');mapCodeInput.placeholder='Mapcode (optioneel)';mapCodeInput.maxLength=6;mapCodeInput.autocomplete='off';mapCodeInput.setAttribute('aria-label','Mapcode');
+  const mapRow=element('div','map-picker-row'),mapStatus=element('p','muted map-picker-status','Zonder mapcode wordt het standaardbord gebruikt.');
+  const mapPreview=element('div','map-preview');
+  let selectedMapCode='';
+  const previewButton=element('button','gx-btn','Map bekijken');previewButton.type='button';
+  mapRow.append(mapCodeInput,previewButton);card.append(mapRow,mapStatus,mapPreview);
+  mapCodeInput.addEventListener('input',()=>{selectedMapCode='';mapPreview.replaceChildren();mapStatus.textContent=mapCodeInput.value?'Klik op Map bekijken om de kaart op te halen.':'Zonder mapcode wordt het standaardbord gebruikt.';});
+  previewButton.onclick=async()=>{
+    const code=mapCodeInput.value.trim().toUpperCase();mapStatus.textContent='Map ophalen…';previewButton.disabled=true;
+    try{
+      const response=await fetch(`/api/maps/${encodeURIComponent(code)}`),data=await response.json();
+      if(!response.ok)throw new Error(data.message??'Map kon niet worden geladen.');
+      selectedMapCode=code;showMapPreview(mapPreview,data.map as MapDefinition);
+      const map=data.map as MapDefinition,landCount=map.tiles.filter(tile=>tile.kind!=='water').length;
+      mapStatus.textContent=`${map.name} · ${map.style} · ${landCount} landtegels · ${map.players.min}–${map.players.max} spelers`;
+    }catch(error){selectedMapCode='';mapPreview.replaceChildren();mapStatus.textContent=error instanceof Error?error.message:'Map kon niet worden geladen.';}
+    finally{previewButton.disabled=false;}
+  };
   const humanCountSelect=element('select'),botCountSelect=element('select'),options=element('div','create-options'),summary=element('p','muted create-summary');
   humanCountSelect.setAttribute('aria-label','Aantal menselijke spelers');
   botCountSelect.setAttribute('aria-label','Aantal bots');
@@ -203,7 +239,9 @@ function lobby(message='Maak een kamer of gebruik een uitnodigingslink.'){
   const botLabel=element('label','','Bots');botLabel.append(botCountSelect);
   options.append(humanLabel,botLabel);
   const create=element('button','primary','Nieuwe kamer'),status=element('p','muted');
+  const editorLink=element('a','map-editor-link','Map genereren of bewerken');editorLink.href='/maps/new';
   const row=element('div','row');row.append(name,create);card.append(options,summary,row,status);main.append(card);
+  card.append(editorLink);
   function updateBotOptions(){
     const humans=Number(humanCountSelect.value),previous=Number(botCountSelect.value),validCounts=[0,1,2,3].filter(count=>humans+count===3||humans+count===4);
     botCountSelect.replaceChildren(...validCounts.map(count=>new Option(String(count),String(count))));
@@ -217,7 +255,7 @@ function lobby(message='Maak een kamer of gebruik een uitnodigingslink.'){
     if(!name.value.trim()){status.textContent='Vul eerst je naam in.';name.focus();return;}
     localStorage.setItem('dimat-name',name.value.trim());status.textContent='Kamer maken…';
     create.disabled=true;
-    try{const response=await fetch('/api/rooms',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({displayName:name.value.trim(),humanCount:Number(humanCountSelect.value),botCount:Number(botCountSelect.value)})});const data=await response.json();if(!response.ok)throw new Error(data.message??'Kamer maken mislukt');
+    try{    const response=await fetch('/api/rooms',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({displayName:name.value.trim(),humanCount:Number(humanCountSelect.value),botCount:Number(botCountSelect.value),...(selectedMapCode?{mapCode:selectedMapCode}:{})})});const data=await response.json();if(!response.ok)throw new Error(data.message??'Kamer maken mislukt');
       roomId=data.roomId;seatToken=data.seatToken;playerId=data.playerId;history.replaceState({},'',`/play/${roomId}`);connect(name.value.trim());
     }catch(error){status.textContent=error instanceof Error?error.message:'Verbinding mislukt';create.disabled=false;}
   }
@@ -297,7 +335,7 @@ function drawBoard(host:HTMLElement,v:PlayerView){
   if(mode==='settlement')for(const action of v.legalActions)if(action.type==='placeSettlement'||action.type==='buildSettlement')vertexTargets.set(action.vertex,action);
   if(mode==='city')for(const action of v.legalActions)if(action.type==='buildCity')vertexTargets.set(action.vertex,action);
   const edgeTargets=new Map<number,GameAction>();
-  if(mode==='road')for(const action of v.legalActions)if(action.type==='placeRoad'||action.type==='buildRoad')edgeTargets.set(action.edge,action);
+  if(mode==='road')for(const action of v.legalActions)if(action.type==='placeRoad'||action.type==='buildRoad'||action.type==='buildBridge')edgeTargets.set(action.edge,action);
   const tileTargets=new Map<number,GameAction[]>();
   if(mode==='robber')for(const action of v.legalActions)if(action.type==='moveRobber'||action.type==='playKnight'){const tile='tile'in action?action.tile:-1;const list=tileTargets.get(tile)??[];list.push(action);tileTargets.set(tile,list);}
 
@@ -323,7 +361,8 @@ function drawBoard(host:HTMLElement,v:PlayerView){
   for(const entry of terrainTiles)terrainLayer.append(entry.group);
   for(const edge of v.board.edges){
     const [a,b]=edge.vertices.map(id=>pointForVertex(v,id)) as [[number,number],[number,number]];
-    const road=v.roads[edge.id];if(road){const piece=createLine(roadLayer,a,b,`road-piece player-${road.owner}`);piece.setAttribute('stroke-width',String(ROAD_WIDTH));}
+    if(edge.kind==='river'){const water=createLine(roadLayer,a,b,'river-edge');water.setAttribute('stroke-width','.1');}
+    const road=v.roads[edge.id];if(road){const piece=createLine(roadLayer,a,b,`road-piece player-${road.owner}${edge.kind==='river'?' bridge-piece':''}`);piece.setAttribute('stroke-width',String(ROAD_WIDTH));}
     const action=edgeTargets.get(edge.id);if(action){const highlight=createLine(targetLayer,a,b,'legal-road-highlight');highlight.setAttribute('stroke','#a5ffc2');highlight.setAttribute('stroke-width','.2');highlight.setAttribute('stroke-dasharray','.1 .09');highlight.setAttribute('pointer-events','none');const dx=b[0]-a[0],dy=b[1]-a[1],length=Math.hypot(dx,dy),halfWidth=.36,nx=-dy/length*halfWidth,ny=dx/length*halfWidth;const hit=svgElement('polygon');hit.setAttribute('points',[[a[0]+nx,a[1]+ny],[b[0]+nx,b[1]+ny],[b[0]-nx,b[1]-ny],[a[0]-nx,a[1]-ny]].map(point=>point.join(',')).join(' '));hit.setAttribute('class',`board-target road-edge legal${pending?.targetKey===`edge-${edge.id}`?' pending':''}`);hit.setAttribute('fill','#fff');hit.setAttribute('fill-opacity','.001');hit.setAttribute('pointer-events','all');hit.dataset.targetKey=`edge-${edge.id}`;targetLayer.append(hit);
       hit.addEventListener('click',()=>sendAction(action,`edge-${edge.id}`));hit.addEventListener('pointerenter',()=>showPiecePreview(previewLayer,'road',[(a[0]+b[0])/2,(a[1]+b[1])/2],playerColor(playerId),[a,b]));hit.addEventListener('pointerleave',()=>previewLayer.replaceChildren());}
   }
@@ -620,7 +659,8 @@ function renderChat(){
 }
 document.documentElement.dataset.theme=localStorage.getItem('dimat-theme')??'dark';
 const savedRoom=location.pathname.split('/')[2];roomId=savedRoom??'';
-if(roomId){seatToken=localStorage.getItem(`dimat-seat-${roomId}`)??'';const name=localStorage.getItem('dimat-name')??'';if(name)connect(name);else lobby('Vul je naam in om aan te sluiten.');}else lobby();
+if(location.pathname==='/maps/new')mountMapEditor(root,()=>location.assign('/'));
+else if(roomId){seatToken=localStorage.getItem(`dimat-seat-${roomId}`)??'';const name=localStorage.getItem('dimat-name')??'';if(name)connect(name);else lobby('Vul je naam in om aan te sluiten.');}else lobby();
 document.addEventListener('keydown',event=>{if(event.key!=='`'||event.ctrlKey||event.metaKey||event.altKey)return;const target=event.target;if(target instanceof HTMLInputElement||target instanceof HTMLTextAreaElement||target instanceof HTMLSelectElement)return;debugEnabled=!debugEnabled;const url=new URL(location.href);if(debugEnabled)url.searchParams.set('debug','1');else url.searchParams.delete('debug');history.replaceState({},'',url);render();void refreshDebugData();});
 window.addEventListener('error',event=>{const message=event.error instanceof Error?event.error.message:event.message;root.replaceChildren();const card=element('section','card fatal-error');card.append(element('h1','','DiMaT liep vast'),element('p','',message));const copy=element('button','','Kopieer foutinformatie');copy.onclick=async()=>{const bundle=JSON.stringify({message,stack:event.error instanceof Error?event.error.stack:undefined,roomId,playerId,view,userAgent:navigator.userAgent},null,2);try{await navigator.clipboard.writeText(bundle);copy.textContent='Gekopieerd ✓';}catch{copy.textContent='Kopiëren niet beschikbaar';}};root.append(card);});
 window.addEventListener('unhandledrejection',event=>{lastServerError={code:'CLIENT_UNHANDLED_REJECTION',message:String(event.reason)};pushNotice('error',`Onverwachte fout: ${String(event.reason)}`);if(roomId)render();});

@@ -4,6 +4,11 @@ import { clientMessageSchema } from '../src/index.js';
 const message=(action:unknown)=>({type:'action',sequence:1,action});
 
 describe('trade action protocol schemas',()=>{
+  it('accepts bridge construction actions with an edge id',()=>{
+    expect(clientMessageSchema.safeParse(message({type:'buildBridge',playerId:'p0',edge:3})).success).toBe(true);
+    expect(clientMessageSchema.safeParse(message({type:'buildBridge',playerId:'p0',edge:-1})).success).toBe(false);
+  });
+
   it('accepts bundled offers and counter-offers with positive resource counts',()=>{
     expect(clientMessageSchema.safeParse(message({type:'proposeTrade',playerId:'p0',give:{brick:2,lumber:1},want:{wool:1},targets:['p1','p2']})).success).toBe(true);
     expect(clientMessageSchema.safeParse(message({type:'counterTrade',playerId:'p1',offerId:1,partnerId:'p0',give:{wool:1},want:{ore:2}})).success).toBe(true);

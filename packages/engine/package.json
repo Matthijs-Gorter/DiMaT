@@ -17,5 +17,8 @@
   },
   "exports": {
     ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@dimat/maps": "workspace:*"
   }
 }

@@ -1,6 +1,7 @@
 // Axial hex math, pointy-top, matching the engine lattice: vertex x = 2q + r (+ corner), y = 3r (+ corner).
 
 export interface Axial { q: number; r: number; }
+export interface Cube { x: number; y: number; z: number; }
 
 export const key = (a: Axial): string => `${a.q},${a.r}`;
 
@@ -26,6 +27,12 @@ export const neighbors = (a: Axial): Axial[] => DIRECTIONS.map((_, side) => neig
 
 export const oppositeSide = (side: number): number => (side + 3) % 6;
 
+/** Axial -> cube coordinates, where x + y + z is always zero. */
+export function toCube(a: Axial): Cube {
+  const y = -(a.q + a.r);
+  return { x: a.q, y: y === 0 ? 0 : y, z: a.r };
+}
+
 /** Axial -> cube s coordinate; distance in hex steps. */
 export function distance(a: Axial, b: Axial): number {
   const dq = a.q - b.q, dr = a.r - b.r;
@@ -35,6 +42,7 @@ export function distance(a: Axial, b: Axial): number {
 /** Tiles at exactly `radius` steps from `center`, clockwise starting at the north-east corner tile.
  *  Deterministic order. */
 export function ring(center: Axial, radius: number): Axial[] {
+  assertRadius(radius);
   if (radius === 0) return [{ ...center }];
   const result: Axial[] = [];
   const ne = DIRECTIONS[5]!;
@@ -50,6 +58,7 @@ export function ring(center: Axial, radius: number): Axial[] {
 
 /** All tiles within `radius` of `center`, ordered r ascending then q ascending. */
 export function disc(center: Axial, radius: number): Axial[] {
+  assertRadius(radius);
   const result: Axial[] = [];
   for (let dr = -radius; dr <= radius; dr++) {
     for (let dq = Math.max(-radius, -radius - dr); dq <= Math.min(radius, radius - dr); dq++) {
@@ -57,6 +66,10 @@ export function disc(center: Axial, radius: number): Axial[] {
     }
   }
   return result;
+}
+
+function assertRadius(radius: number): void {
+  if (!Number.isInteger(radius) || radius < 0) throw new RangeError('radius must be a non-negative integer');
 }
 
 /** Odd-r offset (rows shifted right when odd) conversions, used by the ASCII map format. */

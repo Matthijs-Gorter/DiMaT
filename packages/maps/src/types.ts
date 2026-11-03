@@ -8,6 +8,11 @@ export const RESOURCES: readonly Resource[] = ['brick', 'lumber', 'wool', 'grain
 export type MapTileKind = Resource | 'desert' | 'water' | 'gold' | 'fog';
 export type MapStyle = 'base' | 'standard' | 'continent' | 'archipelago' | 'river' | 'lakes' | 'atoll' | 'irregular' | 'random' | 'custom';
 export type EdgeKind = 'land' | 'coast' | 'sea' | 'river';
+export type MapSelection =
+  | { kind: 'base' }
+  | { kind: 'generated'; style: MapStyle; seed?: number; options?: Record<string, unknown> }
+  | { kind: 'preset'; id: string }
+  | { kind: 'custom'; definition: MapDefinition };
 
 export interface MapTile {
   q: number;

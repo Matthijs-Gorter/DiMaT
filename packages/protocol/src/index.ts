@@ -2,15 +2,51 @@ import { z } from 'zod';
 import { RESOURCES, type GameAction, type GameEvent, type PlayerView, type ReplayInput } from '@dimat/engine';
 
 const resourceSchema=z.enum(RESOURCES);
+const sideSchema=z.union([z.literal(0),z.literal(1),z.literal(2),z.literal(3),z.literal(4),z.literal(5)]);
+const mapStyleSchema=z.enum(['base','standard','continent','archipelago','river','lakes','atoll','irregular','random','custom']);
+export const mapDefinitionSchema=z.object({
+  schemaVersion:z.literal(1),
+  id:z.string().min(1).max(80),
+  name:z.string().min(1).max(100),
+  style:mapStyleSchema,
+  seed:z.number().int(),
+  players:z.object({min:z.number().int().min(2).max(8),max:z.number().int().min(2).max(8)}).strict(),
+  victoryTarget:z.number().int().min(3).max(100),
+  tiles:z.array(z.object({
+    q:z.number().int(),r:z.number().int(),
+    kind:z.enum(['brick','lumber','wool','grain','ore','desert','water','gold','fog']),
+    number:z.number().int().nullable(),islandId:z.number().int(),
+    fixedNumber:z.boolean().optional(),fixedKind:z.boolean().optional()
+  }).strict()).min(1).max(300),
+  harbors:z.array(z.object({
+    id:z.number().int().nonnegative(),kind:z.union([z.literal('generic'),resourceSchema]),
+    ratio:z.union([z.literal(2),z.literal(3)]),tile:z.object({q:z.number().int(),r:z.number().int()}).strict(),side:sideSchema
+  }).strict()).max(150),
+  rivers:z.array(z.object({
+    tile:z.object({q:z.number().int(),r:z.number().int()}).strict(),side:sideSchema
+  }).strict()).max(450),
+  islands:z.array(z.object({id:z.number().int().nonnegative(),tileCount:z.number().int().positive(),specialVP:z.number().int().nonnegative()}).strict()).max(150),
+  startRestrictions:z.array(z.object({islandId:z.number().int().nonnegative(),maxPlayers:z.number().int().positive().optional()}).strict()).optional(),
+  features:z.array(z.enum(['gold','fog','seaTiles'])).max(3),
+  allowSeparateIslands:z.boolean(),
+  meta:z.object({
+    generatorVersion:z.number().int().nonnegative(),
+    attempts:z.number().int().positive().optional(),
+    options:z.record(z.string(),z.unknown()).optional()
+  }).strict()
+}).strict();
+export const mapCodeSchema=z.string().regex(/^[A-Z0-9]{6}$/);
 export const createRoomSchema=z.object({
   displayName:z.string().trim().min(1).max(32),
   humanCount:z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4)]).default(2),
   botCount:z.union([z.literal(0),z.literal(1),z.literal(2),z.literal(3)]).default(1),
-  seed:z.number().int().optional()
+  seed:z.number().int().optional(),
+  mapCode:mapCodeSchema.optional()
 }).refine(({humanCount,botCount})=>humanCount+botCount===3||humanCount+botCount===4,{
   path:['botCount'],
   message:'The room must contain three or four players in total.'
 });
+export type MapDefinitionInput=z.infer<typeof mapDefinitionSchema>;
 const partialResources=z.object({
   brick:z.number().int().nonnegative().optional(),
   lumber:z.number().int().nonnegative().optional(),
@@ -31,6 +67,7 @@ export const gameActionSchema=z.discriminatedUnion('type',[
   action('discard',{resources:partialResources}),
   action('moveRobber',{tile:z.number().int().nonnegative(),victimId:player.optional()}),
   action('buildRoad',{edge:z.number().int().nonnegative()}),
+  action('buildBridge',{edge:z.number().int().nonnegative()}),
   action('buildSettlement',{vertex:z.number().int().nonnegative()}),
   action('buildCity',{vertex:z.number().int().nonnegative()}),
   action('buyDevelopmentCard'),
