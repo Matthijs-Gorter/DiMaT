@@ -547,6 +547,15 @@
   --dimat-warning: #9a6a16;
   --dimat-ok: #557b43;
 
+  /* Game-piece and board-overlay colors (also used by TypeScript rendering) */
+  --dimat-player-0: #37a9d2;
+  --dimat-player-1: #e16c59;
+  --dimat-player-2: #e2b941;
+  --dimat-player-3: #7b68c6;
+  --dimat-river: #b7edff;
+  --dimat-legal-highlight: #a5ffc2;
+  --dimat-hit-area: #fff;
+
   /* Shape and depth */
   --dimat-radius: .75rem;
   --dimat-shadow: 0 12px 32px rgba(0, 0, 0, .28);
