@@ -400,3 +400,229 @@ html[data-theme=light] .gx-hud{background:var(--gx-surface)}
 .trade-modal{background:linear-gradient(150deg,var(--gx-surface),var(--gx-bg))}
 @media(max-width:650px){.trade-overlay{align-items:end;padding:.35rem}.trade-modal{width:100%;aspect-ratio:auto;min-height:min(74dvh,35rem);max-height:92dvh;border-radius:.9rem}}
 @media(prefers-reduced-motion:reduce){.trade-modal,.trade-modal-content{animation:none}.trade-counter-value{transition:none}}
+
+
+/* ==========================================================
+   DiMaT Forest Theme — game room surfaces
+   This section styles interface chrome only. The board SVG,
+   terrain-art, tokens, player pieces and map preview remain
+   untouched so terrain assets keep their own art direction.
+   ========================================================== */
+:root {
+  --gx-bg: var(--dimat-bg-950);
+  --gx-surface: var(--dimat-forest-950);
+  --gx-surface-2: var(--dimat-forest-900);
+  --gx-surface-3: var(--dimat-forest-800);
+  --gx-line: var(--dimat-border);
+  --gx-line-strong: var(--dimat-border-strong);
+  --gx-text: var(--dimat-cream);
+  --gx-dim: var(--dimat-sage);
+  --gx-gold: var(--dimat-gold);
+  --gx-gold-soft: rgba(198, 155, 89, .15);
+  --gx-info: #a8b6a5;
+  --gx-ok: #9bbd8d;
+  --gx-warn: #e2bd79;
+  --gx-err: #d98772;
+}
+
+html[data-theme="light"] {
+  --gx-bg: #d8c7a5;
+  --gx-surface: #f2e8d2;
+  --gx-surface-2: #e8d5ad;
+  --gx-surface-3: #ddc69a;
+  --gx-line: rgba(103, 71, 45, .2);
+  --gx-line-strong: rgba(103, 71, 45, .34);
+  --gx-text: #302718;
+  --gx-dim: #6f624c;
+  --gx-gold: #916b33;
+  --gx-gold-soft: rgba(145, 107, 51, .12);
+  --gx-on-gold: #fff8e6;
+  --gx-info: #6f624c;
+  --gx-ok: #3e7045;
+  --gx-warn: #805b2b;
+  --gx-err: #a53f30;
+}
+
+html body:has(.gx-main) {
+  background-color: var(--gx-bg);
+  background-image:
+    radial-gradient(ellipse at 50% 18%, rgba(49, 83, 68, .24), transparent 60%),
+    repeating-radial-gradient(ellipse at 18% 24%,
+      transparent 0 34px,
+      rgba(198, 155, 89, .025) 35px 36px,
+      transparent 37px 70px);
+  color: var(--gx-text);
+}
+
+html[data-theme="light"] body:has(.gx-main) {
+  background-color: var(--gx-bg);
+  background-image:
+    radial-gradient(ellipse at 50% 18%, rgba(248, 239, 217, .8), transparent 64%),
+    repeating-radial-gradient(ellipse at 18% 24%,
+      transparent 0 34px,
+      rgba(103, 71, 45, .025) 35px 36px,
+      transparent 37px 70px);
+}
+
+.gx-header {
+  background: linear-gradient(180deg, rgba(16, 37, 31, .98), rgba(9, 23, 17, .96));
+  border-color: var(--gx-line-strong);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, .14);
+}
+
+html[data-theme="light"] .gx-header {
+  background: linear-gradient(180deg, #f2e8d2, #e6d8ba);
+  border-color: var(--gx-line-strong);
+  box-shadow: 0 5px 18px rgba(66, 48, 23, .08);
+}
+
+.gx-main .gx-side {
+  background:
+    linear-gradient(155deg, rgba(25, 53, 44, .97), rgba(16, 37, 31, .98));
+  border: 1px solid var(--gx-line);
+  box-shadow:
+    0 16px 38px rgba(0, 0, 0, .22),
+    inset 0 1px 0 rgba(242, 232, 210, .04);
+}
+
+html[data-theme="light"] .gx-main .gx-side {
+  background: linear-gradient(155deg, #f7efdd, #e8d5ad);
+  border-color: var(--gx-line);
+  box-shadow: 0 12px 26px rgba(66, 48, 23, .1), inset 0 1px rgba(255, 255, 255, .55);
+}
+
+.gx-player,
+.gx-main .card,
+.gx-hud,
+.gx-devstack,
+.gx-main .gx-section,
+.gx-main .gx-stat,
+.gx-main .gx-slot {
+  border-color: var(--gx-line);
+}
+
+.gx-player {
+  background: linear-gradient(145deg, rgba(36, 66, 55, .62), rgba(16, 37, 31, .58));
+}
+
+.gx-player.active {
+  background: linear-gradient(145deg, rgba(49, 83, 68, .72), rgba(25, 53, 44, .7));
+  border-color: var(--gx-line-strong);
+  box-shadow: inset 0 0 0 1px rgba(226, 189, 121, .08);
+}
+
+html[data-theme="light"] .gx-player {
+  background: linear-gradient(145deg, rgba(255, 248, 230, .7), rgba(232, 213, 173, .8));
+}
+
+html[data-theme="light"] .gx-player.active {
+  background: linear-gradient(145deg, #fff8e9, #e8d5ad);
+}
+
+.gx-main .gx-btn,
+.gx-header .gx-btn {
+  background: linear-gradient(180deg, var(--gx-surface-3), var(--gx-surface-2));
+  border-color: var(--gx-line-strong);
+  color: var(--gx-text);
+  box-shadow: inset 0 1px rgba(242, 232, 210, .04);
+}
+
+.gx-main .gx-btn:hover:not(:disabled),
+.gx-header .gx-btn:hover:not(:disabled) {
+  color: var(--gx-gold-light, #e2bd79);
+  border-color: var(--gx-gold);
+  background: linear-gradient(180deg, var(--gx-surface-3), var(--gx-surface));
+}
+
+.gx-main .gx-btn.selected,
+.gx-header .gx-btn.selected {
+  background: var(--gx-gold-soft);
+  border-color: var(--gx-gold);
+  color: var(--gx-gold-light, var(--gx-gold));
+}
+
+.gx-main .gx-btn.primary {
+  color: var(--gx-on-gold);
+  background: linear-gradient(180deg, #e2bd79, #b98949);
+  border-color: #e2bd79;
+}
+
+.gx-main .gx-btn.primary:hover:not(:disabled) {
+  color: var(--gx-on-gold);
+  background: linear-gradient(180deg, #edca8a, #c69b59);
+}
+
+html[data-theme="light"] .gx-main .gx-btn,
+html[data-theme="light"] .gx-header .gx-btn {
+  background: linear-gradient(180deg, #f7efdd, #e8d5ad);
+  border-color: var(--gx-line-strong);
+  color: var(--gx-text);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .55);
+}
+
+html[data-theme="light"] .gx-main .gx-btn.primary {
+  color: #fff8e6;
+  background: linear-gradient(180deg, #a57a3d, #805b2b);
+  border-color: #916b33;
+}
+
+.gx-hud {
+  background: linear-gradient(145deg, rgba(16, 37, 31, .98), rgba(9, 23, 17, .98));
+  border-color: var(--gx-line-strong);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .3), inset 0 1px rgba(242, 232, 210, .04);
+}
+
+html[data-theme="light"] .gx-hud {
+  background: linear-gradient(145deg, #f7efdd, #e8d5ad);
+  box-shadow: 0 12px 28px rgba(66, 48, 23, .12), inset 0 1px rgba(255, 255, 255, .6);
+}
+
+.trade-modal {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(49, 83, 68, .28), transparent 62%),
+    linear-gradient(150deg, var(--gx-surface), var(--gx-bg));
+  border-color: var(--gx-gold);
+}
+
+html[data-theme="light"] .trade-modal {
+  background: radial-gradient(ellipse at 50% 0%, rgba(255, 248, 230, .9), transparent 62%), linear-gradient(150deg, #f2e8d2, #d8c7a5);
+}
+
+.trade-resource-group,
+.trade-targets,
+.trade-term,
+.trade-summary,
+.bank-trade-summary,
+.open-trade-offer,
+.incoming-trade,
+.bank-trades {
+  background-color: color-mix(in srgb, var(--gx-surface-2) 76%, var(--gx-bg));
+  border-color: var(--gx-line);
+}
+
+.trade-target:has(input:checked) {
+  background: var(--gx-gold-soft);
+}
+
+.gx-main :is(.gx-title, .gx-label, .gx-empty),
+.gx-header .connection-indicator {
+  color: var(--gx-dim);
+}
+
+/* Accessibility: retain clear focus rings and disable decorative motion. */
+.gx-main :is(button, input, select, textarea):focus-visible,
+.gx-header button:focus-visible {
+  outline: 2px solid var(--gx-gold);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gx-main .gx-btn,
+  .gx-header .gx-btn,
+  .gx-player,
+  .trade-modal,
+  .trade-modal-content {
+    transition: none;
+    animation: none;
+  }
+}
