@@ -11,31 +11,26 @@ const SVG_NS='http://www.w3.org/2000/svg';
 const COLORS=['#37a9d2','#e16c59','#e2b941','#7b68c6'];
 const PIPS:Record<number,number>={2:1,3:2,4:3,5:4,6:5,8:5,9:4,10:3,11:2,12:1};
 const RESOURCE_ICON:Record<'brick'|'lumber'|'wool'|'grain'|'ore',string>={brick:'▦',lumber:'♣',wool:'❖',grain:'✳',ore:'⬡'};
-const TILE_ASSETS:Record<Resource|'desert',string[]>={
-  brick:['spring-brick-01_7f42d4a906254196fa6f41d553030cdc_6e73f772.jpg','spring-brick-02_e5ce19e97b99d980ca3aafd2d5c0730a_bb218207.jpg','spring-brick-03_7175978f6e01bdf367f95737c6f4587c_d21667d6.jpg'],
-  lumber:['spring-wood-01_da70459324efafa075f57045d15e831c_acf197dc.jpg','spring-wood-02_157210c998d7e5a671c1f2d43d2d2ebd_ba2adf57.jpg','spring-wood-03_a270ef19fa914034a5b6ef6f71c02017_4a1a2831.jpg','spring-wood-04_f559f2dcc6134f88844f9920692b6692_17e75d5e.jpg'],
-  wool:['spring-sheep-01_fad9eca90c3bf1526027354ee0cb8a55_0afd8192.jpg','spring-sheep-02_04d320c15697346f2ed3af10e1545279_caeb47ab.jpg','spring-sheep-03_a206fac53074f07b0d77f77254c29737_014ea4b6.jpg','spring-sheep-04_8e080c2d31dc2585fe53c024389504e9_51ffc1ad.jpg'],
-  grain:['spring-wheat-01_2fb098a05ecb3522bdf3c4fdb82b7bad_8f4bdb11.jpg','spring-wheat-02_6cfca0ad0fb6b80082925cae42eb5c50_a2461162.jpg','spring-wheat-03_f92e7f66418340e929d811e72446554e_abe2fcc4.jpg','spring-wheat-04_e34ad9514ce47551ad80b4c61d248677_7f9e4913.jpg'],
-  ore:['spring-ore-01_26a8de8163f7bae9e767b03cdd03dad8_d63df9cf.jpg','spring-ore-02_f4feb28ae3778c59e7138c8bf2b3af14_c0680aff.jpg','spring-ore-03_30a295cbe17e5a05c0192eb8e7483e22_1a2fdc83.jpg'],
-  desert:['spring-desert_5a7254fc93af2f57547cf44d1174e95d_47e24ba1.jpg']
+const TILE_ASSETS:Record<Resource|'desert',string>={
+  brick:'brick.png',
+  lumber:'hout.png',
+  wool:'schaap.png',
+  grain:'graan.png',
+  ore:'erts.png',
+  desert:'woestijn.png'
 };
-// Opaque-pixel bounds of every source PNG (measured, the files themselves stay untouched).
-// Each asset is a hex slab with a visible front wall. It is always scaled uniformly from these bounds, never stretched.
-const TILE_ART:Record<string,{size:number;x:number;y:number;width:number;height:number}>={
-  'brick.png':{size:500,x:25,y:12,width:450,height:480},
-  'hout.png':{size:1254,x:64,y:38,width:1124,height:1184},
-  'schaap.png':{size:500,x:27,y:12,width:448,height:480},
-  'graan.png':{size:500,x:27,y:31,width:447,height:453},
-  'erts.png':{size:500,x:26,y:15,width:448,height:471},
-  'woestijn.png':{size:500,x:27,y:10,width:447,height:481}
-};
+const TILE_ART_BOUNDS={canvasWidth:1225,canvasHeight:1311,x:43,y:0,width:1139,height:1311};
 const HEX_PITCH=2*Math.sqrt(3);
 const TILE_ART_FIT=1.07;
 const TILE_ART_DROP=.16;
-function terrainArtBox(kind:Resource|'desert',cx:number,cy:number){
-  const asset=terrainAsset(kind),art=TILE_ART[asset];if(!art)throw new Error(`Missing tile art metrics for ${asset}`);
-  const scale=HEX_PITCH*TILE_ART_FIT/art.width,size=art.size*scale;
-  return {x:cx-(art.x+art.width/2)*scale,y:cy+TILE_ART_DROP-(art.y+art.height/2)*scale,width:size,height:size};
+function terrainArtBox(cx:number,cy:number){
+  const art=TILE_ART_BOUNDS,scale=HEX_PITCH*TILE_ART_FIT/art.width;
+  return {
+    x:cx-(art.x+art.width/2)*scale,
+    y:cy+TILE_ART_DROP-(art.y+art.height/2)*scale,
+    width:art.canvasWidth*scale,
+    height:art.canvasHeight*scale
+  };
 }
 const HARBOR_MARKER_SIZE=.9;
 const HARBOR_OFFSET=1.1;
@@ -254,15 +249,10 @@ function sendAction(action:GameAction,targetKey?:string){
 function createLine(parent:SVGElement,a:readonly[number,number],b:readonly[number,number],className:string){
   const line=svgElement('line');line.setAttribute('x1',String(a[0]));line.setAttribute('y1',String(a[1]));line.setAttribute('x2',String(b[0]));line.setAttribute('y2',String(b[1]));line.setAttribute('class',className);parent.append(line);return line;
 }
-function rotateBoardPoint(x:number,y:number):[number,number]{const angle=Math.PI/6;return [x*Math.cos(angle)-y*Math.sin(angle),x*Math.sin(angle)+y*Math.cos(angle)];}
-function pointForVertex(v:PlayerView,id:number):[number,number]{const vertex=v.board.vertices[id]!;return rotateBoardPoint(vertex.x*Math.sqrt(3),vertex.y);}
-function tileCenter(q:number,r:number):[number,number]{return rotateBoardPoint((2*q+r)*Math.sqrt(3),3*r);}
+function pointForVertex(v:PlayerView,id:number):[number,number]{const vertex=v.board.vertices[id]!;return [vertex.x*Math.sqrt(3),vertex.y];}
+function tileCenter(q:number,r:number):[number,number]{return [(2*q+r)*Math.sqrt(3),3*r];}
 function pointList(v:PlayerView,ids:number[]){return ids.map(id=>pointForVertex(v,id));}
-function terrainAsset(kind:Resource|'desert',seed:number,tileId:number):string{
-  let hash=(seed^Math.imul(tileId+1,0x9e3779b1))>>>0;
-  hash=Math.imul(hash^(hash>>>16),0x7feb352d);hash=Math.imul(hash^(hash>>>15),0x846ca68b);hash^=hash>>>16;
-  const variants=TILE_ASSETS[kind];return variants[(hash>>>0)%variants.length]!;
-}
+function terrainAsset(kind:Resource|'desert'):string{return TILE_ASSETS[kind];}
 function harborPositions(v:PlayerView){
   const harbors=new Map<number,{vertices:number[];kind:string;ratio:number}>();
   for(const vertex of v.board.vertices)if(vertex.harbor){const harbor=harbors.get(vertex.harbor.id)??{vertices:[],kind:vertex.harbor.kind,ratio:vertex.harbor.ratio};harbor.vertices.push(vertex.id);harbors.set(vertex.harbor.id,harbor);}
@@ -306,17 +296,10 @@ function drawBoard(host:HTMLElement,v:PlayerView){
 
   const terrainTiles:{group:SVGElement;x:number;y:number}[]=[];
   for(const tile of v.board.tiles){
-<<<<<<< HEAD
-    const rolled=v.lastRoll?v.lastRoll[0]+v.lastRoll[1]:null;const produces=tile.number!==null&&tile.number===rolled;const polygon=svgElement('polygon'),points=pointList(v,tile.vertices),[x,y]=tileCenter(tile.q,tile.r),clip=svgElement('clipPath');clip.id=`tile-art-clip-${tile.id}`;clip.setAttribute('clipPathUnits','userSpaceOnUse');const clipShape=svgElement('polygon');clipShape.setAttribute('points',points.map(p=>p.join(',')).join(' '));clip.append(clipShape);defs.append(clip);
-    const terrainTile=svgElement('g');terrainTile.setAttribute('class','terrain-tile');terrainTile.dataset.tile=String(tile.id);
-    const base=svgElement('polygon');base.setAttribute('points',points.map(p=>p.join(',')).join(' '));base.setAttribute('class','terrain-base');base.setAttribute('pointer-events','none');
-    const art=svgElement('image');art.setAttribute('href',`/old_tiles2/${terrainAsset(tile.kind,v.seed,tile.id)}`);art.setAttribute('x',String(x-2));art.setAttribute('y',String(y-Math.sqrt(3)));art.setAttribute('width','4');art.setAttribute('height',String(2*Math.sqrt(3)));art.setAttribute('preserveAspectRatio','none');art.setAttribute('clip-path',`url(#${clip.id})`);art.setAttribute('class',`terrain-art${produces?' producing':''}`);art.setAttribute('pointer-events','none');art.dataset.kind=tile.kind;art.dataset.tile=String(tile.id);
-=======
     const rolled=v.lastRoll?v.lastRoll[0]+v.lastRoll[1]:null;const produces=tile.number!==null&&tile.number===rolled;const polygon=svgElement('polygon'),points=pointList(v,tile.vertices),[x,y]=tileCenter(tile.q,tile.r);
-    const box=terrainArtBox(tile.kind,x,y),terrainTile=svgElement('g');terrainTile.setAttribute('class','terrain-tile');terrainTile.dataset.tile=String(tile.id);
+    const box=terrainArtBox(x,y),terrainTile=svgElement('g');terrainTile.setAttribute('class','terrain-tile');terrainTile.dataset.tile=String(tile.id);
     const base=svgElement('polygon');base.setAttribute('points',points.map(p=>p.join(',')).join(' '));base.setAttribute('class','terrain-base');base.setAttribute('pointer-events','none');
     const art=svgElement('image');art.setAttribute('href',`/tiles/${terrainAsset(tile.kind)}`);art.setAttribute('x',String(box.x));art.setAttribute('y',String(box.y));art.setAttribute('width',String(box.width));art.setAttribute('height',String(box.height));art.setAttribute('preserveAspectRatio','xMidYMid meet');art.setAttribute('class',`terrain-art${produces?' producing':''}`);art.setAttribute('pointer-events','none');art.dataset.kind=tile.kind;art.dataset.tile=String(tile.id);
->>>>>>> refs/remotes/origin/main
     terrainTile.append(base,art);terrainTiles.push({group:terrainTile,x,y});
     polygon.setAttribute('points',points.map(p=>p.join(',')).join(' '));polygon.setAttribute('class',`hex terrain-${tile.kind}${tile.id===v.robberTile?' robber-tile':''}${produces?' producing':''}`);polygon.dataset.tile=String(tile.id);
     const title=svgElement('title');title.textContent=tile.number?`${tile.kind}: ${tile.number}, ${PIPS[tile.number]} pip(s)`:`${tile.kind}`;polygon.append(title);tileLayer.append(polygon);
@@ -330,7 +313,7 @@ function drawBoard(host:HTMLElement,v:PlayerView){
     const actions=tileTargets.get(tile.id);if(actions?.length){const hit=svgElement('polygon');hit.setAttribute('points',points.map(p=>p.join(',')).join(' '));hit.setAttribute('class',`board-target legal-tile${pending?.targetKey===`tile-${tile.id}`?' pending':''}`);hit.dataset.targetKey=`tile-${tile.id}`;hit.dataset.victimCount=String(new Set(actions.flatMap(action=>action.type==='moveRobber'||action.type==='playKnight'?action.victimId?[action.victimId]:[]:[])).size);hit.addEventListener('click',()=>chooseRobberAction(actions,tile.id));targetLayer.append(hit);}
   }
   // Painter's order: top rows first so lower tiles cover the front wall of the tiles behind them.
-  terrainTiles.sort((a,b)=>a.y-b.y||a.x-b.x);for(const entry of terrainTiles)terrainLayer.append(entry.group);
+  terrainTiles.sort((a,b)=>Math.abs(a.y-b.y)>1e-6?a.y-b.y:a.x-b.x);for(const entry of terrainTiles)terrainLayer.append(entry.group);
   for(const edge of v.board.edges){
     const [a,b]=edge.vertices.map(id=>pointForVertex(v,id)) as [[number,number],[number,number]];
     const road=v.roads[edge.id];if(road){const piece=createLine(roadLayer,a,b,`road-piece player-${road.owner}`);piece.setAttribute('stroke-width','.2');}

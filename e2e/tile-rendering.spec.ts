@@ -56,9 +56,10 @@ test('terrain art is placed consistently on the hex grid without clipping the bo
     return [...document.querySelectorAll<SVGImageElement>('.terrain-art')].map(image => {
       const polygon = document.querySelector<SVGPolygonElement>(`.hex[data-tile="${image.dataset.tile}"]`)!.getBBox();
       const x = image.x.baseVal.value, y = image.y.baseVal.value, width = image.width.baseVal.value, height = image.height.baseVal.value;
-      return { kind: image.dataset.kind!, dx: x + width / 2 - (polygon.x + polygon.width / 2), dy: y + height / 2 - (polygon.y + polygon.height / 2), insideView: x >= view.x && y >= view.y && x + width <= view.x + view.width && y + height <= view.y + view.height };
+      return { kind: image.dataset.kind!, polygonRatio: polygon.width / polygon.height, dx: x + width / 2 - (polygon.x + polygon.width / 2), dy: y + height / 2 - (polygon.y + polygon.height / 2), insideView: x >= view.x && y >= view.y && x + width <= view.x + view.width && y + height <= view.y + view.height };
     });
   });
+  for (const tile of layout) expect(tile.polygonRatio).toBeCloseTo(Math.sqrt(3) / 2, 5);
   const byKind = new Map<string, typeof layout>();
   for (const item of layout) byKind.set(item.kind, [...(byKind.get(item.kind) ?? []), item]);
   for (const [kind, items] of byKind) for (const item of items) { expect(item.dx, `${kind} dx`).toBeCloseTo(items[0]!.dx, 4); expect(item.dy, `${kind} dy`).toBeCloseTo(items[0]!.dy, 4); }

@@ -162,20 +162,13 @@ test('setup roads have direct legal edge hit targets on the board',async({browse
   await expect(host.locator('.terrain-art')).toHaveCount(19);
   const tileGeometry=await host.locator('.terrain-art').evaluateAll(async images=>Promise.all(images.map(async image=>{
     const bitmap=await createImageBitmap(await (await fetch(image.getAttribute('href')!)).blob());
-    return {clipPath:image.getAttribute('clip-path'),preserve:image.getAttribute('preserveAspectRatio'),width:Number(image.getAttribute('width')),height:Number(image.getAttribute('height')),natural:bitmap.width/bitmap.height};
+    return {clipPath:image.getAttribute('clip-path'),preserve:image.getAttribute('preserveAspectRatio'),width:Number(image.getAttribute('width')),height:Number(image.getAttribute('height')),natural:bitmap.width/bitmap.height,transform:image.getAttribute('transform')};
   })));
   expect(tileGeometry).toHaveLength(19);
-<<<<<<< HEAD
-  await expect(host.locator('.board clipPath')).toHaveCount(19);
-  for(const geometry of tileGeometry){expect(geometry.clipPath).not.toBeNull();expect(geometry.width).toBe(4);expect(geometry.height).toBeCloseTo(2*Math.sqrt(3),5);expect(geometry.bounds?.x).toBeCloseTo(geometry.x,5);expect(geometry.bounds?.y).toBeCloseTo(geometry.y,5);expect(geometry.bounds?.width).toBeCloseTo(4,5);expect(geometry.bounds?.height).toBeCloseTo(2*Math.sqrt(3),5);}
-  const tileStyle=await host.locator('.hex').first().evaluate(tile=>({gap:getComputedStyle(tile).strokeWidth,label:getComputedStyle(tile.ownerDocument.querySelector('.number-label')!).fontSize}));
-  expect(tileStyle.gap).toBe('5px');
-=======
   await expect(host.locator('.board clipPath')).toHaveCount(0);
-  for(const geometry of tileGeometry){expect(geometry.clipPath).toBeNull();expect(geometry.preserve).toBe('xMidYMid meet');expect(geometry.width/geometry.height).toBeCloseTo(geometry.natural,5);}
+  for(const geometry of tileGeometry){expect(geometry.clipPath).toBeNull();expect(geometry.preserve).toBe('xMidYMid meet');expect(geometry.width/geometry.height).toBeCloseTo(geometry.natural,5);expect(geometry.transform).toBeNull();}
   const tileStyle=await host.locator('.hex').first().evaluate(tile=>({stroke:getComputedStyle(tile).stroke,label:getComputedStyle(tile.ownerDocument.querySelector('.number-label')!).fontSize}));
   expect(tileStyle.stroke).toBe('none');
->>>>>>> refs/remotes/origin/main
   expect(Number.parseFloat(tileStyle.label)).toBeCloseTo(.34,5);
   await expect(host.locator('.number-token').first()).toHaveAttribute('r','.6');
   await expect(host.locator('.beach-rim')).toHaveCount(0);
@@ -189,8 +182,8 @@ test('setup roads have direct legal edge hit targets on the board',async({browse
   const legalVertices=await host.locator('.spot.legal').evaluateAll(spots=>spots.map(spot=>{const circle=spot as SVGCircleElement;return [circle.cx.baseVal.value,circle.cy.baseVal.value];}));
   for(const harbor of harborGeometry){expect(harbor.edge).not.toBeNull();expect(harbor.connectors).toHaveLength(2);expect(harbor.radius).toBeCloseTo(.45,5);const endpoints=new Set<string>();for(const connector of harbor.connectors){expect(connector.vertex).not.toBeNull();expect(legalVertices.some(([vertexX,vertexY])=>Math.abs(vertexX!-connector.start[0]!)<1e-4&&Math.abs(vertexY!-connector.start[1]!)<1e-4)).toBe(true);expect(Math.abs(Math.hypot(connector.endpoint[0]!-harbor.center[0]!,connector.endpoint[1]!-harbor.center[1]!)-harbor.radius)).toBeLessThan(1e-4);endpoints.add(connector.endpoint.join(','));}expect(endpoints.size).toBe(2);}
   const tileImages=await host.locator('.terrain-art').evaluateAll(images=>images.map(image=>({kind:image.getAttribute('data-kind'),path:image.getAttribute('href')})));
-  const tileAssetPrefixes:Record<string,string>={brick:'spring-brick-',lumber:'spring-wood-',wool:'spring-sheep-',grain:'spring-wheat-',ore:'spring-ore-',desert:'spring-desert_'};
-  for(const image of tileImages){expect(image.path).toMatch(new RegExp(`^/old_tiles2/${tileAssetPrefixes[image.kind??'']}.*\\.jpg$`));}
+  const tileAssets:Record<string,string>={brick:'/tiles/brick.png',lumber:'/tiles/hout.png',wool:'/tiles/schaap.png',grain:'/tiles/graan.png',ore:'/tiles/erts.png',desert:'/tiles/woestijn.png'};
+  for(const image of tileImages)expect(image.path).toBe(tileAssets[image.kind??'']);
   const assetResponses=await host.evaluate(async paths=>Promise.all([...new Set(paths)].map(async path=>(await fetch(path)).ok)),tileImages.map(image=>image.path!));
   expect(assetResponses.every(Boolean)).toBe(true);
   await expect(host.locator('.spot.legal')).toHaveCount(54,{timeout:5000});
