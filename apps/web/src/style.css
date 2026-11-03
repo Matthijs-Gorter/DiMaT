@@ -365,3 +365,257 @@ html[data-theme=light] .surface-inset{background:linear-gradient(180deg,rgba(223
 html[data-theme=light] .surface-pattern-topographic{background-image:repeating-radial-gradient(ellipse at 20% 30%,transparent 0 24px,rgba(145,107,51,.035) 25px 26px,transparent 27px 52px)}
 html[data-theme=light] .surface-pattern-hex{background-image:linear-gradient(30deg,transparent 48.8%,rgba(103,71,45,.035) 49.4% 50.2%,transparent 50.8%),linear-gradient(90deg,transparent 48.8%,rgba(103,71,45,.035) 49.4% 50.2%,transparent 50.8%),linear-gradient(150deg,transparent 48.8%,rgba(103,71,45,.035) 49.4% 50.2%,transparent 50.8%)}
 html[data-theme=light] .surface-pattern-organic{background-image:radial-gradient(ellipse at 15% 25%,rgba(223,203,163,.06),transparent 42%),radial-gradient(ellipse at 85% 75%,rgba(243,233,210,.08),transparent 48%)}
+
+
+/* ==========================================================
+   DiMaT Design Foundation — forest / parchment
+   Shared application surfaces only. Board SVG and terrain art
+   intentionally retain their own palette and rendering rules.
+   ========================================================== */
+:root {
+  color-scheme: dark;
+  --dimat-bg-950: #091711;
+  --dimat-bg-900: #0d1e17;
+  --dimat-forest-950: #10251f;
+  --dimat-forest-900: #19352c;
+  --dimat-forest-800: #244237;
+  --dimat-forest-700: #315344;
+  --dimat-gold: #c69b59;
+  --dimat-gold-light: #e2bd79;
+  --dimat-parchment: #e8d5ad;
+  --dimat-cream: #f2e8d2;
+  --dimat-sage: #a8b6a5;
+  --dimat-brown: #67472d;
+  --dimat-text: var(--dimat-cream);
+  --dimat-text-muted: var(--dimat-sage);
+  --dimat-border: rgba(198, 155, 89, .2);
+  --dimat-border-strong: rgba(198, 155, 89, .36);
+  --dimat-focus: var(--dimat-gold-light);
+}
+:root {
+  --gx-bg: var(--dimat-bg-950);
+  --gx-surface: var(--dimat-forest-950);
+  --gx-surface-2: var(--dimat-forest-900);
+  --gx-surface-3: var(--dimat-forest-800);
+  --gx-line: var(--dimat-border);
+  --gx-line-strong: var(--dimat-border-strong);
+  --gx-text: var(--dimat-cream);
+  --gx-dim: var(--dimat-sage);
+  --gx-gold: var(--dimat-gold);
+  --gx-gold-soft: rgba(198, 155, 89, .15);
+}
+html {
+  min-height: 100%;
+  background: var(--dimat-bg-950);
+  color: var(--dimat-cream);
+  color-scheme: dark;
+}
+body, body.surface-page {
+  min-height: 100vh;
+  color: var(--dimat-cream);
+  background-color: var(--dimat-bg-950);
+  background-image:
+    radial-gradient(ellipse at 50% 12%, rgba(49, 83, 68, .28), transparent 58%),
+    radial-gradient(ellipse at 8% 82%, rgba(25, 53, 44, .22), transparent 48%),
+    linear-gradient(155deg, rgba(9, 23, 17, .12), rgba(9, 23, 17, .5)),
+    repeating-radial-gradient(ellipse at 18% 24%, transparent 0 34px, rgba(198, 155, 89, .025) 35px 36px, transparent 37px 70px);
+  background-attachment: fixed;
+}
+#app { color: var(--dimat-cream); }
+.top, .roomhead, .gx-header {
+  color: var(--dimat-cream);
+  background: linear-gradient(180deg, rgba(16, 37, 31, .96), rgba(9, 23, 17, .96));
+  border-color: var(--dimat-border);
+  box-shadow: 0 1px 0 rgba(226, 189, 121, .04);
+}
+.brand, .gx-header .brand { color: var(--dimat-gold-light); }
+main:not(.gx-main) { color: var(--dimat-cream); }
+.card, .roster, .hint-box, .map-editor, .map-editor-panel, .bottom-bar, .game-sidebar, .game-left-sidebar {
+  color: var(--dimat-cream);
+  background: linear-gradient(148deg, rgba(25, 53, 44, .97), rgba(16, 37, 31, .98));
+  border: 1px solid var(--dimat-border);
+  border-radius: 14px;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, .24), inset 0 1px 0 rgba(242, 232, 210, .035);
+}
+.card h1, .card h2, .card h3, .map-editor h1, .map-editor h2, .map-editor h3 { color: var(--dimat-parchment); }
+.muted, .gx-label, .gx-empty { color: var(--dimat-text-muted); }
+button, input, select, textarea, .trade-select {
+  font: inherit;
+  color: var(--dimat-cream);
+  background: linear-gradient(180deg, #244237, #19352c);
+  border: 1px solid var(--dimat-border-strong);
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(242, 232, 210, .035);
+}
+button {
+  cursor: pointer;
+  transition: color .16s ease, background-color .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+button:hover:not(:disabled) {
+  color: var(--dimat-gold-light);
+  border-color: var(--dimat-gold);
+  box-shadow: 0 0 0 1px rgba(198, 155, 89, .1), 0 5px 16px rgba(0, 0, 0, .16);
+}
+button:active:not(:disabled) { transform: translateY(1px); }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--dimat-focus);
+  outline-offset: 2px;
+}
+button.primary, .gx-main .gx-btn.primary {
+  color: #1a1407;
+  background: linear-gradient(180deg, #e2bd79, #b98949);
+  border-color: #e2bd79;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .2), inset 0 1px rgba(255, 255, 255, .24);
+}
+button.primary:hover:not(:disabled), .gx-main .gx-btn.primary:hover:not(:disabled) {
+  color: #1a1407;
+  background: linear-gradient(180deg, #edca8a, #c69b59);
+  border-color: #edca8a;
+}
+button:disabled { cursor: not-allowed; }
+.pill, .gx-chip {
+  color: var(--dimat-parchment);
+  background: rgba(9, 23, 17, .48);
+  border-color: var(--dimat-border-strong);
+}
+.create-options label, .map-editor-fields label { color: var(--dimat-parchment); }
+.chat-transcript, .debug-json, .debug-section, .event, .resource-counter-row, .trade-target, .open-trade-offer, .incoming-trade {
+  color: var(--dimat-cream);
+  background: rgba(9, 23, 17, .5);
+  border-color: var(--dimat-border);
+}
+.chat-line, .players p, .event { color: var(--dimat-text-muted); }
+.resource {
+  color: var(--dimat-parchment);
+  background: rgba(9, 23, 17, .66);
+  border: 1px solid var(--dimat-border);
+}
+.resource b { color: var(--dimat-cream); }
+.trade-resource-group, .trade-targets, .trade-summary, .trade-term, .bank-trade-summary {
+  color: var(--dimat-cream);
+  background: rgba(9, 23, 17, .38);
+  border-color: var(--dimat-border);
+}
+.trade-tabs, .bank-trades { border-color: var(--dimat-border); }
+.trade-resource-group legend, .trade-targets legend, .trade-summary-side > strong, .open-trade-offer h3, .incoming-trade h3 { color: var(--dimat-gold-light); }
+.connection-indicator { color: var(--dimat-sage); }
+
+/* Light mode: warm parchment rather than cool blue-grey. */
+html[data-theme="light"] {
+  color-scheme: light;
+  --dimat-bg-950: #d8c7a5;
+  --dimat-bg-900: #e6d8ba;
+  --dimat-forest-950: #f2e8d2;
+  --dimat-forest-900: #e8d5ad;
+  --dimat-forest-800: #ddc69a;
+  --dimat-forest-700: #cdb184;
+  --dimat-gold: #916b33;
+  --dimat-gold-light: #795626;
+  --dimat-parchment: #67472d;
+  --dimat-cream: #302718;
+  --dimat-sage: #6f624c;
+  --dimat-brown: #67472d;
+  --dimat-text: #302718;
+  --dimat-text-muted: #6f624c;
+  --dimat-border: rgba(103, 71, 45, .2);
+  --dimat-border-strong: rgba(103, 71, 45, .34);
+  --dimat-focus: #916b33;
+  --gx-bg: #d8c7a5;
+  --gx-surface: #f2e8d2;
+  --gx-surface-2: #e8d5ad;
+  --gx-surface-3: #ddc69a;
+  --gx-line: var(--dimat-border);
+  --gx-line-strong: var(--dimat-border-strong);
+  --gx-text: #302718;
+  --gx-dim: #6f624c;
+  --gx-gold: #916b33;
+  --gx-gold-soft: rgba(145, 107, 51, .12);
+}
+html[data-theme="light"], html[data-theme="light"] body, html[data-theme="light"] body.surface-page {
+  color: #302718;
+  background-color: #d8c7a5;
+  background-image:
+    radial-gradient(ellipse at 50% 12%, rgba(248, 239, 217, .78), transparent 62%),
+    radial-gradient(ellipse at 8% 82%, rgba(205, 177, 132, .18), transparent 48%),
+    repeating-radial-gradient(ellipse at 18% 24%, transparent 0 34px, rgba(103, 71, 45, .025) 35px 36px, transparent 37px 70px);
+  background-attachment: fixed;
+}
+html[data-theme="light"] #app, html[data-theme="light"] main:not(.gx-main) { color: #302718; }
+html[data-theme="light"] .top, html[data-theme="light"] .roomhead, html[data-theme="light"] .gx-header {
+  color: #302718;
+  background: linear-gradient(180deg, #f2e8d2, #e6d8ba);
+  border-color: var(--dimat-border);
+}
+html[data-theme="light"] .card, html[data-theme="light"] .roster, html[data-theme="light"] .hint-box, html[data-theme="light"] .map-editor, html[data-theme="light"] .map-editor-panel, html[data-theme="light"] .bottom-bar, html[data-theme="light"] .game-sidebar, html[data-theme="light"] .game-left-sidebar {
+  color: #302718;
+  background: linear-gradient(148deg, #f7efdd, #e8d5ad);
+  border-color: var(--dimat-border);
+  box-shadow: 0 12px 30px rgba(66, 48, 23, .1), inset 0 1px 0 rgba(255, 255, 255, .55);
+}
+html[data-theme="light"] button, html[data-theme="light"] input, html[data-theme="light"] select, html[data-theme="light"] textarea, html[data-theme="light"] .trade-select {
+  color: #302718;
+  background: linear-gradient(180deg, #f7efdd, #e8d5ad);
+  border-color: var(--dimat-border-strong);
+}
+html[data-theme="light"] button.primary, html[data-theme="light"] .gx-main .gx-btn.primary {
+  color: #fff8e6;
+  background: linear-gradient(180deg, #a57a3d, #805b2b);
+  border-color: #916b33;
+}
+html[data-theme="light"] .pill, html[data-theme="light"] .gx-chip {
+  color: #67472d;
+  background: rgba(255, 248, 230, .5);
+}
+html[data-theme="light"] .chat-transcript, html[data-theme="light"] .debug-json, html[data-theme="light"] .debug-section, html[data-theme="light"] .event, html[data-theme="light"] .resource-counter-row, html[data-theme="light"] .trade-target, html[data-theme="light"] .open-trade-offer, html[data-theme="light"] .incoming-trade {
+  color: #302718;
+  background: rgba(248, 239, 217, .82);
+  border-color: var(--dimat-border);
+}
+html[data-theme="light"] .chat-line, html[data-theme="light"] .players p, html[data-theme="light"] .event, html[data-theme="light"] .connection-indicator { color: #6f624c; }
+html[data-theme="light"] .resource {
+  color: #67472d;
+  background: rgba(248, 239, 217, .9);
+  border-color: var(--dimat-border);
+}
+html[data-theme="light"] .resource b { color: #302718; }
+
+/* Subtle reusable texture utilities. Keep decorative patterns on page surfaces only. */
+.surface-pattern-topographic {
+  background-image: repeating-radial-gradient(ellipse at 18% 26%, transparent 0 26px, rgba(198, 155, 89, .04) 27px 28px, transparent 29px 55px);
+}
+.surface-pattern-hex {
+  background-image:
+    linear-gradient(30deg, transparent 48.8%, rgba(168, 182, 165, .035) 49.4% 50.2%, transparent 50.8%),
+    linear-gradient(90deg, transparent 48.8%, rgba(168, 182, 165, .035) 49.4% 50.2%, transparent 50.8%),
+    linear-gradient(150deg, transparent 48.8%, rgba(168, 182, 165, .035) 49.4% 50.2%, transparent 50.8%);
+  background-size: 3rem 5.2rem;
+}
+.surface-panel {
+  background: linear-gradient(148deg, rgba(25, 53, 44, .97), rgba(16, 37, 31, .98));
+  border: 1px solid var(--dimat-border);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, .24), inset 0 1px rgba(242, 232, 210, .035);
+}
+.surface-elevated {
+  background: linear-gradient(145deg, #244237, #10251f);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .3), inset 0 1px rgba(242, 232, 210, .06);
+}
+.surface-inset {
+  background: linear-gradient(180deg, rgba(9, 23, 17, .62), rgba(13, 30, 23, .82));
+  border: 1px solid rgba(198, 155, 89, .16);
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, .2);
+}
+html[data-theme="light"] .surface-panel {
+  background: linear-gradient(148deg, #f7efdd, #e8d5ad);
+  box-shadow: 0 12px 30px rgba(66, 48, 23, .1), inset 0 1px rgba(255, 255, 255, .55);
+}
+html[data-theme="light"] .surface-elevated {
+  background: linear-gradient(145deg, #fff8e9, #f2e8d2);
+  box-shadow: 0 14px 30px rgba(66, 48, 23, .12);
+}
+html[data-theme="light"] .surface-inset {
+  background: linear-gradient(180deg, rgba(223, 203, 163, .25), rgba(248, 239, 217, .72));
+  border-color: rgba(145, 107, 51, .18);
+}
+@media (prefers-reduced-motion: reduce) {
+  button { transition: none; }
+}
