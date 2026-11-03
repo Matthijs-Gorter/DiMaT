@@ -76,3 +76,10 @@ Detailed, app-specific record of requests, implementation work, tests, simulator
 - **Verification:** `pnpm -r typecheck`, `pnpm -r lint`, and Playwright passed; the debug browser check confirmed matching server/client view hashes. Full engine suite and 10,000-game sim are still to run.
 - **Known gaps:** Debug mutation helpers for forced dice, resource grants and setup skipping are deferred to keep deterministic replay intact. Pinch-to-zoom, sound controls and consent-based domestic offer/counter trade also remain open.
 - **Files:** Web debug UI; server debug endpoint and event tracking; protocol chat contract; Playwright configuration/tests; README and phase log/decision docs.
+
+## 2026-11-03 — Maps: steps A and B (golden hashes, maps foundation)
+
+- **Request:** Several map types (islands with a river, a very large irregular map, classic, random), a generator, and user-made maps. Owner chose: edge rivers with bridges, generator plus editor, server storage with share code.
+- **Changes:** Added `docs/MAPS_PLAN.md` (amends `MAP_GENERATOR_PLAN.md`) and decisions in `docs/DECISIONS.md`. Pinned the legacy board with golden hashes for seeds 1, 2, 3, 42 and 12345 (`packages/engine/test/legacy-board-golden.test.ts`). Built the `packages/maps` foundation: engine-identical xorshift RNG with sub-stream hashing, hex math, schema (including `rivers`), `buildBoard`, and validators (shape, players, adjacent 6/8, connectivity, regions, rivers, harbors).
+- **Verification:** `pnpm -r typecheck`, `pnpm -r lint`, `pnpm -r test` all pass (maps 33 tests, engine 68). Sim baseline before changes: `pnpm sim --games 1000 --seed 1` gave `OK: 1000 games, 718355 actions`. The engine was not modified in this step, so the baseline stands.
+- **Not done yet:** balancing, generators, bridge rule, engine integration, server storage, web picker and editor (steps C to J in `docs/MAPS_PLAN.md`).

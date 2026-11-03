@@ -70,3 +70,11 @@
 - **Action validation:** Do not enumerate proposed bundle combinations in `legalActions`; this would grow combinatorially with bundle size. The engine's `validateTradeAction` validates proposal/counter terms, while legal actions enumerate concrete responses. The server calls the same validator. Alternative: enumerate a bounded set of offers, which would impose an arbitrary cap.
 - **Legacy logs:** The engine and protocol continue to decode/replay immediate `domesticTrade` actions from old logs. The live server rejects them so current games always use consent.
 - Trade offers and response state are public in every `PlayerView`; resource hands remain private. Offer IDs are deterministic state, so replay reconstructs them.
+
+## 2026-11-03 — Map system owner decisions
+
+- **River semantics changed:** rivers are edge sets with bridges, not water-tile strips with fords. See `docs/MAPS_PLAN.md`, which amends `docs/MAP_GENERATOR_PLAN.md`. Alternative considered and recorded: fords (land tiles in a water strip) as in the older plan.
+- **ASSUMPTION — bridge cost and limit:** a bridge costs 2 lumber + 2 brick, and each player may build at most 3 bridges (they count against the 15 road pieces). There is no official source; this is a house rule. Alternatives: 1 lumber + 1 brick + 1 ore, or an unlimited number.
+- **Region ids:** `tile.islandId` means a region connected without crossing a river edge. Land connectivity checks ignore rivers because bridges cross them.
+- **Custom map cap:** 150 land tiles, enforced by validators and the server.
+- **Storage:** custom maps live in SQLite on the server with a short share code; a room stores a full copy in its settings so replays stay reproducible.
