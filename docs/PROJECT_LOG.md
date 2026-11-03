@@ -128,3 +128,12 @@ Detailed, app-specific record of requests, implementation work, tests, simulator
 - **Finding:** A seven put the game into `discard`, but the bot scheduler chose only the active turn player. When that player was human and a bot was first in the pending-discard queue, the scheduler stopped and never reached the robber phase.
 - **Changes:** The server now schedules the first pending discarder during the discard phase and the active player during other phases. Saved active rooms resume using the same corrected scheduler after a server restart.
 - **Verification:** Added server regression tests for discard ordering and actor selection. Workspace typecheck, lint, all tests, and the eight-style bot simulation passed (8 games, 5,855 actions).
+
+
+## 2026-11-03 — Game UI build mode and development-card visibility
+
+- **Request:** Add one build button that reveals every legal build target on the board; keep development cards visible; preserve played knights and Largest Army progress; continue the dark Civilization-inspired UI direction.
+- **Work:** Added a unified build-mode toggle that shows legal road, bridge, settlement, and city placements simultaneously using the engine-provided legal action list. Kept the player's development-card hand expanded in the right-side game panel. Added each player's played-knight count and a Largest Army badge when the engine awards it. Added focused styling for build mode, award badges, and the persistent card hand.
+- **Rules:** No engine rules changed. Played knights remain tracked in the engine's knightsPlayed and playedDevCards state; Largest Army remains computed by the existing engine award logic and is displayed from hasLargestArmy.
+- **Verification:** Not run in this GitHub-only editing session. Run the required workspace typecheck, lint, tests, simulator, and UI E2E checks locally/CI before treating this work as verified.
+- **Known limitation:** The build overlay is driven by server-authoritative legal actions. It presents currently legal placements only; unaffordable actions are not shown as selectable build targets. UI layout and visual appearance still require a browser review at desktop and laptop resolutions.
