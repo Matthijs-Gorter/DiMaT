@@ -10,7 +10,7 @@ main{max-width:1500px;padding:1.4rem clamp(.75rem,3vw,2.4rem) 2.5rem}
 .boardcard{position:relative;overflow:hidden;min-height:min(72vh,740px);padding:.65rem;background:linear-gradient(145deg,#1a2830,#121d24);border-color:#354550;box-shadow:0 16px 50px #0003}
 .board{display:block;height:min(72vh,720px);min-height:520px;border-radius:12px;background:radial-gradient(ellipse,#1b5360 0,#164352 56%,#10333f 100%);touch-action:none;user-select:none}
 .hex{stroke:none;transition:filter .16s,opacity .16s}
-.hex{fill:transparent;pointer-events:all}.terrain-base{fill:#8f7152;stroke:#8f7152;stroke-width:.04;stroke-linejoin:round}.terrain-art{shape-rendering:auto;filter:drop-shadow(0 .07px .09px rgba(6,20,28,.38))}.terrain-art{pointer-events:none}.terrain-art.producing{filter:brightness(1.22) drop-shadow(0 0 .13px #fff6);animation:tile-production .8s ease-in-out 2}
+.hex{fill:transparent;pointer-events:all}.terrain-art{shape-rendering:auto;pointer-events:none}.terrain-art.producing{filter:brightness(1.22);animation:tile-production .8s ease-in-out 2}
 .hex:hover{filter:brightness(1.08)}
 .terrain-icon{font:600 .45px ui-sans-serif,system-ui;fill:#fff9e8;paint-order:stroke;stroke:#18262e;stroke-width:.08;opacity:.82;pointer-events:none}
 .number-token{fill:#f1dfb7;stroke:#75543e;stroke-width:.07;filter:drop-shadow(0 .06px .05px #0008);pointer-events:none}
