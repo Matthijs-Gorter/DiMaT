@@ -478,6 +478,8 @@ function renderPlayerList(viewState:PlayerView){
     addStat('Steden op bord',cities,'<path d="M3 21V10l4-3 4 3V6l5-4 5 4v15z"/>','cities');
     addStat('Gespeelde ridders',player.knightsPlayed,'<path d="M4 20 20 4M8 4h12v12"/>','knights');
     if(player.hasLargestArmy)row.append(element('span','gx-award-badge','♞ Grootste riddermacht'));
+    addStat('Gespeelde ridders',player.knightsPlayed,'<path d="M4 20 20 4M8 4h12v12"/>','knights');
+    if(player.hasLargestArmy)row.append(element('span','gx-award-badge','♞ Grootste riddermacht'));
     row.append(identity,stats);list.append(row);
   }
   return list;
