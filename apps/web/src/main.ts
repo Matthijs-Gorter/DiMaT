@@ -586,7 +586,7 @@ function renderBank(viewState:PlayerView){
 }
 function renderDevSummary(viewState:PlayerView){
   const section=element('section','gx-section gx-dev'),head=element('div','gx-dev-head'),text=element('div');
-  text.append(element('h3','gx-title','Ontwikkelingskaarten'),element('p','',`${viewState.developmentCardsRemaining} in de stapel · ${viewState.ownDevelopmentCards.length} in je hand`));
+  text.append(element('h3','gx-title','Ontwikkelingskaarten'),element('p','',`${viewState.developmentCardsRemaining} in de stapel · `${viewState.ownDevelopmentCards.length} in je hand`));
   head.append(text);section.append(head,renderDevelopmentHand(viewState));return section;
 }
 function renderDebugActions(viewState:PlayerView){
