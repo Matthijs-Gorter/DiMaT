@@ -8,6 +8,7 @@ import { readApiJson } from './api-json.js';
 import './style.css';
 import './game-ui.css';
 
+document.documentElement.dataset.theme=localStorage.getItem('dimat-theme')??'dark';
 document.body.classList.add('surface-page');
 
 type SeatSummary={playerId:string;displayName:string;bot:boolean};
