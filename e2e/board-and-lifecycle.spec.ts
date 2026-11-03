@@ -127,10 +127,11 @@ async function reachHostBuildPhase(host:Page,guest:Page){
   await expect(host.locator('.gx-main')).toHaveAttribute('data-game-phase','build');
 }
 
+async function readHand(page:Page){return page.locator('.gx-hud .gx-slot').evaluateAll(cells=>Object.fromEntries(cells.map(cell=>[
+  (cell as HTMLElement).dataset.resource,Number(cell.querySelector('.gx-slot-count')?.textContent)
+])));}
+
 async function tradeablePair(host:Page,guest:Page){
-  const readHand=async(page:Page)=>page.locator('.gx-hud .gx-slot').evaluateAll(cells=>Object.fromEntries(cells.map(cell=>[
-    (cell as HTMLElement).dataset.resource,Number(cell.querySelector('.gx-slot-count')?.textContent)
-  ])));
   const hostHand=await readHand(host) as Record<string,number>,guestHand=await readHand(guest) as Record<string,number>;
   const give=Object.keys(hostHand).find(resource=>hostHand[resource]!>0&&Object.keys(guestHand).some(want=>want!==resource&&guestHand[want]!>0));
   const want=Object.keys(guestHand).find(resource=>resource!==give&&guestHand[resource]!>0);
@@ -139,12 +140,13 @@ async function tradeablePair(host:Page,guest:Page){
 }
 
 async function makeHumanTradeOffer(host:Page,guest:Page){
+  await host.getByRole('button',{name:'Ruilen'}).click();
   const pair=await tradeablePair(host,guest);
   const resourceName=(resource:string)=>({brick:'brick',lumber:'hout',wool:'wol',grain:'graan',ore:'erts'} as Record<string,string>)[resource]!;
   await host.getByRole('button',{name:`Meer ${resourceName(pair.give)} geven`}).click();
   await host.getByRole('button',{name:`Meer ${resourceName(pair.want)} vragen`}).click();
   await host.getByLabel('Aanbieden aan Guest').check();
-  await host.getByRole('button',{name:'Bied aan'}).click();
+  await host.getByRole('button',{name:'Bied ruil aan'}).click();
   return pair;
 }
 
@@ -157,7 +159,7 @@ test('lobby does not expose action submission before the server starts the game'
 });
 
 test('setup roads have direct legal edge hit targets on the board',async({browser})=>{
-  const {host,hostContext,guest,guestContext}=await createTwoHumansAndBot(browser);
+  const {host,hostContext,guestContext}=await createTwoHumansAndBot(browser);
   await host.setViewportSize({width:1024,height:768});
   await host.getByRole('button',{name:'Start spel'}).click();
   await expect(host.locator('.terrain-art')).toHaveCount(19);
@@ -263,20 +265,19 @@ test('both humans complete the full setup on the board and roll to begin play',a
 test('players offer and accept a domestic trade and both hands update',async({browser})=>{
   const {host,guest,hostContext,guestContext}=await createTwoHumansAndBot(browser);
   await reachHostBuildPhase(host,guest);
-  const tradePanel=host.locator('.trade-panel');await expect(tradePanel).toHaveAttribute('open','');
-  await tradePanel.locator('summary').click();await expect(tradePanel).not.toHaveAttribute('open','');
-  await tradePanel.locator('summary').click();await expect(tradePanel).toHaveAttribute('open','');
   const pair=await makeHumanTradeOffer(host,guest);
+  await expect(host.getByRole('dialog',{name:'Ruilen'})).toBeVisible();
   await expect(guest.locator('.incoming-trade')).toContainText('Ruilvoorstel');
   await guest.getByRole('button',{name:'Accepteren'}).click();
   await expect(host.locator('.open-trade-offer')).toHaveCount(0);
+  await expect.poll(async()=>{const hand=await readHand(guest);return [hand[pair.give],hand[pair.want]];}).toEqual([pair.guestHand[pair.give]!+1,pair.guestHand[pair.want]!-1]);
   const hostAfter=await tradeablePair(host,guest);
   expect(hostAfter.hostHand[pair.give]).toBe(pair.hostHand[pair.give]!-1);
   expect(hostAfter.hostHand[pair.want]).toBe(pair.hostHand[pair.want]!+1);
   expect(hostAfter.guestHand[pair.give]).toBe(pair.guestHand[pair.give]!+1);
   expect(hostAfter.guestHand[pair.want]).toBe(pair.guestHand[pair.want]!-1);
   await expect(host.locator('.gx-event-list li').first()).toContainText('ruilde met Guest');
-  await expect(tradePanel).toHaveAttribute('open','');
+  await expect(host.getByRole('dialog',{name:'Ruilen'})).toBeVisible();
   await guestContext.close();await hostContext.close();
 });
 

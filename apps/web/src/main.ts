@@ -8,6 +8,8 @@ import { readApiJson } from './api-json.js';
 import './style.css';
 import './game-ui.css';
 
+document.body.classList.add('surface-page');
+
 type SeatSummary={playerId:string;displayName:string;bot:boolean};
 type PlacementMode='road'|'settlement'|'city'|'robber'|null;
 type PendingAction={sequence:number;targetKey?:string};
@@ -23,23 +25,27 @@ let view:PlayerView|undefined;
 let playerId='';let seatToken='';let roomId='';let socket:WebSocket|undefined;
 let events:string[]=[];let seats:SeatSummary[]=[];let botStatuses:BotStatus[]=[];
 let chatMessages:Array<{playerId:string;text:string;createdAt:number}>=[];
-let lifecycle:RoomLifecycle='lobby';let gameStartedReceived=false;let tradePanelOpen:boolean|null=null;
+let lifecycle:RoomLifecycle='lobby';let gameStartedReceived=false;let tradeOpen=false;let tradeTab:'players'|'bank'='players';
+let tradeDraftGive:Partial<Record<Resource,number>>={};let tradeDraftWant:Partial<Record<Resource,number>>={};let tradeDraftTargets=new Set<string>();let tradeTargetsInitialized=false;let tradeCounterVisible=false;
+let tradeFeedback='';let bankGive:Resource='brick';let bankReceive:Resource='lumber';let bankQuantity=1;let bankQueue:{give:Resource;receive:Resource;remaining:number}|null=null;
 let placementMode:PlacementMode=null;let pending:PendingAction|null=null;let robberChoices:GameAction[]|null=null;
 let debugEnabled=new URLSearchParams(location.search).get('debug')==='1';let devCardsOpen=false;let connectionState='connecting';let latencyMs:number|null=null;let lastServerError:Record<string,unknown>|null=null;let debugData:Record<string,unknown>|null=null;
 
 const element=<K extends keyof HTMLElementTagNameMap>(tag:K,cls='',text='')=>{
   const node=document.createElement(tag);if(cls)node.className=cls;if(text)node.textContent=text;return node;
 };
-type ResourceCounter={value:number;max:number;output:HTMLOutputElement;minus:HTMLButtonElement;plus:HTMLButtonElement};
-function resourceCounter(title:string,max:number,minusLabel:string,plusLabel:string,onChange:()=>void,subtitle?:string){
+type ResourceCounter={value:number;max:number;output:HTMLOutputElement;minus:HTMLButtonElement;plus:HTMLButtonElement;refresh:()=>void};
+function resourceCounter(title:string,max:number,minusLabel:string,plusLabel:string,onChange:()=>void,subtitle?:string,initial=0){
   const row=element('div','resource-counter-row'),label=element('div','resource-counter-label'),controls=element('div','resource-counter-controls');
   label.append(element('span','resource-counter-name',title));if(subtitle)label.append(element('small','resource-counter-subtitle',subtitle));
   const minus=element('button','resource-counter-button resource-counter-minus','−'),output=element('output','resource-counter-value','0'),plus=element('button','resource-counter-button resource-counter-plus','+');
   minus.type='button';plus.type='button';minus.setAttribute('aria-label',minusLabel);plus.setAttribute('aria-label',plusLabel);
-  const counter:ResourceCounter={value:0,max,output,minus,plus};
+  const counter:ResourceCounter={value:Math.max(0,Math.min(max,initial)),max,output,minus,plus,refresh:()=>{}};
   const refresh=()=>{output.value=String(counter.value);minus.disabled=counter.value<=0||!!pending;plus.disabled=counter.value>=counter.max||!!pending;};
-  minus.onclick=()=>{counter.value=Math.max(0,counter.value-1);refresh();onChange();};
-  plus.onclick=()=>{counter.value=Math.min(counter.max,counter.value+1);refresh();onChange();};
+  counter.refresh=refresh;
+  const animateValue=()=>{if(typeof output.animate==='function')output.animate([{transform:'scale(1.16)',color:'var(--gx-gold)'},{transform:'scale(1)',color:'var(--gx-text)'}],{duration:180,easing:'ease-out'});};
+  minus.onclick=()=>{counter.value=Math.max(0,counter.value-1);refresh();animateValue();onChange();};
+  plus.onclick=()=>{counter.value=Math.min(counter.max,counter.value+1);refresh();animateValue();onChange();};
   controls.append(minus,output,plus);row.append(label,controls);refresh();return{row,counter};
 }
 const svgElement=(tag:string)=>document.createElementNS(SVG_NS,tag);
@@ -263,13 +269,19 @@ function connect(displayName:string){
   socket.onopen=()=>{connectionState='connected';socket?.send(JSON.stringify({type:'join',roomId,seatToken:seatToken||undefined,displayName}));void measureLatency();};
   socket.onmessage=event=>{
     const message=JSON.parse(event.data) as ServerMessage;
-    if(message.type==='error'){pending=null;robberChoices=null;lastServerError={code:message.code,message:message.message,details:message.details};pushNotice('error',errorText(message.code,message.message));render();}
+    if(message.type==='error'){pending=null;bankQueue=null;robberChoices=null;lastServerError={code:message.code,message:message.message,details:message.details};pushNotice('error',errorText(message.code,message.message));if(tradeOpen)tradeFeedback=errorText(message.code,message.message);render();}
     else if(message.type==='joined'){seatToken=message.seatToken;playerId=message.playerId;lifecycle=message.lifecycle;gameStartedReceived=false;localStorage.setItem(`dimat-seat-${roomId}`,seatToken);render();}
     else if(message.type==='gameStarted'||message.type==='gameFinished'){view=message.view;lifecycle=message.type==='gameFinished'?'finished':'started';gameStartedReceived=message.type==='gameStarted';render();void refreshDebugData();}
     else if(message.type==='update'){
-      if(view)view={...view,...message.patch};events=[...message.events.map(eventText),...events].slice(0,50);
-      if(pending&&message.clientSequence===pending.sequence){pending=null;robberChoices=null;placementMode=null;}
-      if(view?.winnerId){lifecycle='finished';gameStartedReceived=false;}render();void refreshDebugData();
+      if(view)view={...view,...message.patch};if(view?.tradeOffer?.proposerId!==view?.playerId&&view?.tradeOffer?.targets.includes(view?.playerId??'')){tradeOpen=true;tradeTab='players';}events=[...message.events.map(eventText),...events].slice(0,50);
+      let continueBankQueue=false;
+      for(const tradeEvent of message.events){
+        if(tradeEvent.type==='domesticTradeCompleted')tradeFeedback=`${playerName(String(tradeEvent.partnerId))} heeft het ruilvoorstel geaccepteerd.`;
+        else if(tradeEvent.type==='tradeDeclined')tradeFeedback=`${playerName(String(tradeEvent.playerId))} heeft het ruilvoorstel afgewezen.`;
+        else if(tradeEvent.type==='maritimeTradeCompleted')tradeFeedback=`Bankruil uitgevoerd: ${tradeEvent.ratio} ${RESOURCE_NAMES[String(tradeEvent.give) as Resource]} voor 1 ${RESOURCE_NAMES[String(tradeEvent.receive) as Resource]}.`;
+      }
+      if(pending&&message.clientSequence===pending.sequence){pending=null;robberChoices=null;placementMode=null;if(bankQueue){if(bankQueue.remaining<=0){bankQueue=null;}else continueBankQueue=true;}}
+      if(view?.winnerId){lifecycle='finished';gameStartedReceived=false;}render();if(continueBankQueue)sendNextBankTrade();void refreshDebugData();
     }else if(message.type==='chat'){chatMessages=[...chatMessages,{playerId:message.playerId,text:message.text,createdAt:message.createdAt}].slice(-100);render();}
     else if(message.type==='room'){seats=message.seats;botStatuses=message.botStatuses;lifecycle=message.lifecycle;if(lifecycle!=='started')gameStartedReceived=false;render();void refreshDebugData();}
   };
@@ -284,6 +296,13 @@ function sendAction(action:GameAction,targetKey?:string){
   if(socket?.readyState!==WebSocket.OPEN){pushNotice('warning','Verbinding is nog niet klaar.');render();return;}
   const sequence=Date.now();pending={sequence,...(targetKey?{targetKey}:{})};render();
   socket.send(JSON.stringify({type:'action',sequence,action}));
+}
+function sendNextBankTrade(){
+  if(!bankQueue||!view||pending)return;
+  if(bankQueue.remaining<=0){bankQueue=null;render();return;}
+  const action=view.legalActions.find((candidate):candidate is Extract<GameAction,{type:'maritimeTrade'}>=>candidate.type==='maritimeTrade'&&candidate.give===bankQueue!.give&&candidate.receive===bankQueue!.receive);
+  if(!action){bankQueue=null;tradeFeedback='De bankruil kan met de huidige voorraad niet verder.';render();return;}
+  bankQueue.remaining--;sendAction(action);
 }
 function createLine(parent:SVGElement,a:readonly[number,number],b:readonly[number,number],className:string){
   const line=svgElement('line');line.setAttribute('x1',String(a[0]));line.setAttribute('y1',String(a[1]));line.setAttribute('x2',String(b[0]));line.setAttribute('y2',String(b[1]));line.setAttribute('class',className);parent.append(line);return line;
@@ -411,6 +430,7 @@ function renderActionBar(viewState:PlayerView){
   }
   bar.append(builds);
   const other=element('div','gx-act-group');
+  const tradeButton=element('button',`gx-btn gx-trade-launch${tradeOpen?' selected':''}`);tradeButton.type='button';tradeButton.setAttribute('aria-pressed',String(tradeOpen));tradeButton.append(svgIcon('<path d="M7 10h3l2-2h3l2 2h2a2 2 0 0 1 1.6 3.2l-2.2 3a2 2 0 0 1-1.6.8h-3.1l-2-2H10l-2 2H5a2 2 0 0 1-1.6-3.2l2-3A2 2 0 0 1 7 10Z"/><path d="m9 10 2.4 2.3a1 1 0 0 0 1.4 0l2.2-2.1M9 14l1.3-1.3m2.9 1.3 1.3-1.3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/>'),element('span','','Ruilen'));tradeButton.onclick=()=>{tradeOpen=!tradeOpen;if(tradeOpen){tradeFeedback='';window.setTimeout(()=>document.querySelector<HTMLButtonElement>('.trade-modal-close')?.focus(),0);}else bankQueue=null;render();};other.append(tradeButton);
   const purchase=viewState.legalActions.find(a=>a.type==='buyDevelopmentCard');if(purchase)other.append(actionButton('Ontwikkelingskaart',purchase));
   const knight=viewState.legalActions.find(a=>a.type==='playKnight');if(knight){const button=element('button',`gx-btn${mode==='robber'?' selected':''}`,'Ridder spelen');button.type='button';button.title='Verplaats de rover en kies eventueel een speler om te beroven.';button.onclick=()=>submitBuildMode('robber');other.append(button);}
   if(placementMode&&viewState.phase!=='setupSettlement'&&viewState.phase!=='setupRoad'&&viewState.phase!=='robber'){const cancel=element('button','gx-btn','Annuleer plaatsing');cancel.type='button';cancel.onclick=()=>{placementMode=null;render();};other.append(cancel);}
@@ -537,7 +557,6 @@ function renderRoom(){
   right.append(renderStatus(view));
   const picker=renderRobberPicker();if(picker)right.append(picker);
   const discard=renderDiscardPrompt(view);if(discard)right.append(discard);
-  const trade=renderTradePanel(view);if(trade)right.append(trade);
   right.append(renderBank(view),renderDevSummary(view),renderEventLog(),renderChat());
   const debug=renderDebugActions(view);if(debug)right.append(debug);
 
@@ -547,6 +566,7 @@ function renderRoom(){
   hud.append(resources,element('span','gx-hud-sep'),renderDevStack(view),element('span','gx-hud-sep'),renderActionBar(view));
 
   main.append(left,board,right,hud);
+  const trade=renderTradePanel(view);if(trade)main.append(trade);
 }
 function renderStatus(viewState:PlayerView){
   const section=element('section','gx-section');
@@ -598,52 +618,63 @@ function renderDiscardPrompt(viewState:PlayerView){
   form.append(total,submit,feedback);form.onsubmit=event=>{event.preventDefault();update();if(submit.disabled)return;const resources=Object.fromEntries([...fields].map(([resource,count])=>[resource,count.value])) as Partial<Record<Resource,number>>;const action=findLegalDiscardAction(viewState.legalActions,resources);if(!action){feedback.textContent='Deze combinatie is geen beschikbare aflegactie. Controleer je selectie.';return;}feedback.textContent='';sendAction(action);};card.append(form);return card;
 }
 function renderTradePanel(viewState:PlayerView){
-  const bankTrades=viewState.legalActions.filter((action):action is Extract<GameAction,{type:'maritimeTrade'}>=>action.type==='maritimeTrade'),offer=viewState.tradeOffer;
-  const isActive=viewState.phase==='build'&&viewState.activePlayerId===viewState.playerId;
-  if(!bankTrades.length&&!offer&&!isActive)return null;
-  const panel=element('details','bank-panel trade-panel');panel.open=tradePanelOpen??(isActive||!!offer);panel.addEventListener('toggle',()=>{tradePanelOpen=panel.open;});panel.append(element('summary','trade-panel-summary','Ruilen'));
-  const bundleText=(bundle:Partial<Record<Resource,number>>)=>Object.entries(bundle).filter(([,count])=>(count??0)>0).map(([resource,count])=>`${count} ${RESOURCE_NAMES[resource as Resource]}`).join(', ');
+  if(!tradeOpen)return null;
+  const bankTrades=viewState.legalActions.filter((action):action is Extract<GameAction,{type:'maritimeTrade'}>=>action.type==='maritimeTrade');
+  const offer=viewState.tradeOffer,isActive=viewState.phase==='build'&&viewState.activePlayerId===viewState.playerId;
+  const resources=['brick','lumber','wool','grain','ore'] as Resource[];
+  const panel=element('div','trade-overlay');panel.addEventListener('click',event=>{if(event.target===panel){tradeOpen=false;bankQueue=null;render();}});
+  const modal=element('section','trade-modal');modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');modal.setAttribute('aria-labelledby','trade-modal-title');
+  const header=element('header','trade-modal-header'),title=element('h2','','Ruilen');title.id='trade-modal-title';
+  const close=element('button','gx-btn trade-modal-close','×');close.type='button';close.setAttribute('aria-label','Ruilvenster sluiten');close.onclick=()=>{tradeOpen=false;bankQueue=null;render();};header.append(svgIcon('<path d="M7 10h3l2-2h3l2 2h2a2 2 0 0 1 1.6 3.2l-2.2 3a2 2 0 0 1-1.6.8h-3.1l-2-2H10l-2 2H5a2 2 0 0 1-1.6-3.2l2-3A2 2 0 0 1 7 10Z"/>'),title,close);modal.append(header);
+  const tabs=element('div','trade-tabs');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Ruiltype');
+  for(const [key,label] of [['players','Spelers'],['bank','Bank']] as const){const button=element('button',`gx-btn${tradeTab===key?' selected':''}`,label);button.type='button';button.setAttribute('role','tab');button.setAttribute('aria-selected',String(tradeTab===key));button.id=`trade-tab-${key}`;button.setAttribute('aria-controls','trade-tab-panel');button.onclick=()=>{tradeTab=key;render();};tabs.append(button);}modal.append(tabs);
+  const content=element('div','trade-modal-content');content.id='trade-tab-panel';content.setAttribute('role','tabpanel');content.setAttribute('aria-labelledby',`trade-tab-${tradeTab}`);
+  const bundleCards=(bundle:Partial<Record<Resource,number>>)=>{const row=element('div','trade-bundle');for(const resource of resources){const count=bundle[resource]??0;if(count){const chip=element('span','trade-bundle-chip');chip.append(resourceIcon(resource),document.createTextNode(`${count} ${RESOURCE_NAMES[resource]}`));row.append(chip);}}if(!row.childElementCount)row.append(element('span','muted','Geen kaarten'));return row;};
   function editor(counter?:{offerId:number;partnerId:string}){
     const form=element('form','trade-editor');form.noValidate=true;const giveCounts=new Map<Resource,ResourceCounter>(),wantCounts=new Map<Resource,ResourceCounter>();
-    for(const [side,title,fields,maxFor] of [['give','Geef',giveCounts,(resource:Resource)=>viewState.ownResources[resource]],['want','Wil',wantCounts,()=>19]] as const){
-      const group=element('fieldset',`trade-resource-group trade-${side}`);group.append(element('legend','',title));
-      for(const resource of ['brick','lumber','wool','grain','ore'] as Resource[]){
-        const {row,counter:count}=resourceCounter(`${RESOURCE_ICON[resource as keyof typeof RESOURCE_ICON]} ${RESOURCE_NAMES[resource]}`,maxFor(resource),`Minder ${RESOURCE_NAMES[resource]} ${side==='give'?'geven':'vragen'}`,`Meer ${RESOURCE_NAMES[resource]} ${side==='give'?'geven':'vragen'}`,update);
-        fields.set(resource,count);group.append(row);
-      }
+    for(const [side,label,fields,maxFor,draft] of [['give','Jij biedt',giveCounts,(resource:Resource)=>viewState.ownResources[resource],tradeDraftGive],['want','Je vraagt',wantCounts,()=>19,tradeDraftWant]] as const){
+      const group=element('fieldset',`trade-resource-group trade-${side}`);group.append(element('legend','',label));
+      for(const resource of resources){const {row,counter:count}=resourceCounter(`${RESOURCE_ICON[resource as keyof typeof RESOURCE_ICON]} ${RESOURCE_NAMES[resource]}`,maxFor(resource),`Minder ${RESOURCE_NAMES[resource]} ${side==='give'?'geven':'vragen'}`,`Meer ${RESOURCE_NAMES[resource]} ${side==='give'?'geven':'vragen'}`,update,undefined,counter?0:draft[resource]??0);fields.set(resource,count);group.append(row);}
       form.append(group);
     }
     const targetInputs=new Map<string,HTMLInputElement>();
-    if(!counter){const targets=element('fieldset','trade-targets');targets.append(element('legend','','Aanbieden aan'));for(const player of viewState.players.filter(item=>item.id!==viewState.playerId)){const label=element('label','trade-target');const input=element('input');input.type='checkbox';input.setAttribute('aria-label',`Aanbieden aan ${playerName(player.id)}`);input.checked=!seats.find(seat=>seat.playerId===player.id)?.bot;input.addEventListener('change',update);targetInputs.set(player.id,input);label.append(input,document.createTextNode(playerName(player.id)));targets.append(label);}form.append(targets);}
-    const feedback=element('p','trade-validation');feedback.setAttribute('aria-live','polite');const submit=element('button','primary',counter?'Tegenbod versturen':'Bied aan');submit.type='submit';form.append(submit,feedback);
+    if(!counter){const targets=element('fieldset','trade-targets');targets.append(element('legend','','Aanbieden aan'));for(const player of viewState.players.filter(item=>item.id!==viewState.playerId)){const label=element('label','trade-target'),input=element('input');label.style.setProperty('--trade-player-color',playerColor(player.id));input.type='checkbox';input.setAttribute('aria-label',`Aanbieden aan ${playerName(player.id)}`);if(!tradeTargetsInitialized&&!seats.find(seat=>seat.playerId===player.id)?.bot)tradeDraftTargets.add(player.id);input.checked=tradeDraftTargets.has(player.id);input.addEventListener('change',()=>{if(input.checked)tradeDraftTargets.add(player.id);else tradeDraftTargets.delete(player.id);update();});targetInputs.set(player.id,input);const badge=element('small','trade-target-kind',seats.find(seat=>seat.playerId===player.id)?.bot?'Bot':'Speler');label.append(input,element('span','',playerName(player.id)),badge);targets.append(label);}tradeTargetsInitialized=true;form.append(targets);}
+    const summary=element('div','trade-summary'),giveSummary=element('div','trade-summary-side'),wantSummary=element('div','trade-summary-side');giveSummary.append(element('strong','','Jij biedt'));wantSummary.append(element('strong','','Je vraagt'));summary.append(giveSummary,wantSummary);form.append(summary);
+    const footer=element('div','trade-form-footer'),clear=element('button','gx-btn','Wissen');clear.type='button';clear.onclick=()=>{for(const count of [...giveCounts.values(),...wantCounts.values()])count.value=0;if(!counter){tradeDraftGive={};tradeDraftWant={};}update();};
+    const feedback=element('p','trade-validation');feedback.setAttribute('aria-live','polite');const submit=element('button','gx-btn primary',counter?'Tegenbod versturen':'Bied ruil aan');submit.type='submit';footer.append(clear,submit);form.append(footer,feedback);
     function bundle(fields:Map<Resource,ResourceCounter>):Partial<Record<Resource,number>>{return Object.fromEntries([...fields].filter(([,count])=>count.value>0).map(([resource,count])=>[resource,count.value]));}
-    function update(){
-      const give=bundle(giveCounts),want=bundle(wantCounts),selectedTargets=[...targetInputs].filter(([,input])=>input.checked).map(([id])=>id);
-      for(const count of [...giveCounts.values(),...wantCounts.values()]){count.output.value=String(count.value);count.minus.disabled=count.value<=0||!!pending;count.plus.disabled=count.value>=count.max||!!pending;}
-      const overlap=Object.keys(give).some(resource=>(want[resource as Resource]??0)>0),limits=[...giveCounts.values(),...wantCounts.values()].every(count=>Number.isInteger(count.value)&&count.value>=0&&count.value<=count.max);
-      const valid=Object.keys(give).length>0&&Object.keys(want).length>0&&!overlap&&limits&&(counter!==undefined||selectedTargets.length>0);
-      submit.disabled=!valid||!!pending;feedback.textContent=overlap?'Een grondstof kan niet aan beide kanten staan.':!limits?'Je geeft meer kaarten dan je hebt, of de aantallen zijn ongeldig.':'';
+    function update(){const give=bundle(giveCounts),want=bundle(wantCounts),selectedTargets=[...targetInputs].filter(([,input])=>input.checked).map(([id])=>id);for(const count of [...giveCounts.values(),...wantCounts.values()])count.refresh();
+      if(!counter){tradeDraftGive=give;tradeDraftWant=want;tradeDraftTargets=new Set(selectedTargets);}
+      giveSummary.replaceChildren(element('strong','','Jij biedt'),bundleCards(give));wantSummary.replaceChildren(element('strong','','Je vraagt'),bundleCards(want));
+      const overlap=Object.keys(give).some(resource=>(want[resource as Resource]??0)>0),limits=[...giveCounts.values(),...wantCounts.values()].every(count=>Number.isInteger(count.value)&&count.value>=0&&count.value<=count.max),valid=Object.keys(give).length>0&&Object.keys(want).length>0&&!overlap&&limits&&(counter!==undefined||selectedTargets.length>0);
+      submit.disabled=!valid||!!pending;clear.disabled=!!pending;feedback.textContent=overlap?'Een grondstof kan niet aan beide kanten staan.':!limits?'Je geeft meer kaarten dan je hebt, of de aantallen zijn ongeldig.':'';
     }
-    update();
-    form.onsubmit=event=>{event.preventDefault();update();if(submit.disabled)return;const give=bundle(giveCounts),want=bundle(wantCounts);if(counter)sendAction({type:'counterTrade',playerId:viewState.playerId,offerId:counter.offerId,partnerId:counter.partnerId,give,want});else sendAction({type:'proposeTrade',playerId:viewState.playerId,give,want,targets:[...targetInputs].filter(([,input])=>input.checked).map(([id])=>id)});};
-    return form;
+    update();form.onsubmit=event=>{event.preventDefault();update();if(submit.disabled)return;const give=bundle(giveCounts),want=bundle(wantCounts);if(counter)sendAction({type:'counterTrade',playerId:viewState.playerId,offerId:counter.offerId,partnerId:counter.partnerId,give,want});else sendAction({type:'proposeTrade',playerId:viewState.playerId,give,want,targets:[...targetInputs].filter(([,input])=>input.checked).map(([id])=>id)});};return form;
   }
-  if(offer?.proposerId===viewState.playerId){
-    const status=element('div','open-trade-offer');status.append(element('strong','','Ruilvoorstel open'),element('p','',`Geef: ${bundleText(offer.give)} · Wil: ${bundleText(offer.want)}`),element('p','muted',offer.declinedBy.length?`Afgewezen door: ${offer.declinedBy.map(playerName).join(', ')}`:'Nog niemand heeft afgewezen.'));
-    const cancel=viewState.legalActions.find((action):action is Extract<GameAction,{type:'cancelTrade'}>=>action.type==='cancelTrade');if(cancel)status.append(actionButton('Aanbod intrekken',cancel));panel.append(status);
-  }else if(offer?.targets.includes(viewState.playerId)&&!offer.declinedBy.includes(viewState.playerId)){
-    const incoming=element('div','incoming-trade');incoming.append(element('h2','','Ruilvoorstel'),element('p','',`Van ${playerName(offer.proposerId)}`));
-    const terms=element('div','trade-highlight');terms.append(element('span','trade-give',`Jij geeft: ${bundleText(offer.want)}`),element('span','trade-want',`Jij ontvangt: ${bundleText(offer.give)}`));incoming.append(terms);
-    const accept=viewState.legalActions.find((action):action is Extract<GameAction,{type:'acceptTrade'}>=>action.type==='acceptTrade'),decline=viewState.legalActions.find((action):action is Extract<GameAction,{type:'declineTrade'}>=>action.type==='declineTrade'),counter=viewState.legalActions.find((action):action is Extract<GameAction,{type:'counterTrade'}>=>action.type==='counterTrade');
-    const actions=element('div','trade-response-actions');if(accept)actions.append(actionButton('Accepteren',accept,'primary'));else actions.append(element('p','muted','Je hebt niet genoeg kaarten om dit aanbod te accepteren.'));if(decline)actions.append(actionButton('Afwijzen',decline));incoming.append(actions);
-    if(counter){const counterButton=element('button','gx-btn','Tegenbod');counterButton.type='button';const counterForm=editor({offerId:counter.offerId,partnerId:counter.partnerId});counterForm.hidden=true;counterButton.onclick=()=>{counterForm.hidden=!counterForm.hidden;};incoming.append(counterButton,counterForm);}
-    panel.append(incoming);
+  if(tradeTab==='players'){
+    if(offer?.proposerId===viewState.playerId){const status=element('section','open-trade-offer');status.append(element('h3','','Jouw ruilvoorstel'),bundleCards(offer.give),element('p','muted',offer.declinedBy.length?`Afgewezen door: ${offer.declinedBy.map(playerName).join(', ')}`:'Wacht op antwoord.'));const cancel=viewState.legalActions.find((action):action is Extract<GameAction,{type:'cancelTrade'}>=>action.type==='cancelTrade');if(cancel)status.append(actionButton('Aanbod intrekken',cancel));content.append(status);}
+    else if(offer?.targets.includes(viewState.playerId)&&!offer.declinedBy.includes(viewState.playerId)){const incoming=element('section','incoming-trade');incoming.append(element('h3','','Ruilvoorstel'),element('p','muted',`Van ${playerName(offer.proposerId)}`));const terms=element('div','trade-highlight'),giveTerm=element('div','trade-term'),wantTerm=element('div','trade-term');giveTerm.append(element('strong','','Jij geeft'),bundleCards(offer.want));wantTerm.append(element('strong','','Jij ontvangt'),bundleCards(offer.give));terms.append(giveTerm,wantTerm);incoming.append(terms);const accept=viewState.legalActions.find((action):action is Extract<GameAction,{type:'acceptTrade'}>=>action.type==='acceptTrade'),decline=viewState.legalActions.find((action):action is Extract<GameAction,{type:'declineTrade'}>=>action.type==='declineTrade'),counter=viewState.legalActions.find((action):action is Extract<GameAction,{type:'counterTrade'}>=>action.type==='counterTrade');const actions=element('div','trade-response-actions');if(accept)actions.append(actionButton('Accepteren',accept,'primary'));else actions.append(element('p','muted','Je hebt niet genoeg kaarten om dit aanbod te accepteren.'));if(decline)actions.append(actionButton('Afwijzen',decline));incoming.append(actions);if(counter){const counterButton=element('button','gx-btn','Tegenbod');counterButton.type='button';counterButton.setAttribute('aria-expanded',String(tradeCounterVisible));counterButton.onclick=()=>{tradeCounterVisible=!tradeCounterVisible;render();};if(tradeCounterVisible){const counterForm=editor({offerId:counter.offerId,partnerId:counter.partnerId}),cancelCounter=element('button','gx-btn','Annuleer tegenbod');cancelCounter.type='button';cancelCounter.onclick=()=>{tradeCounterVisible=false;render();};counterForm.prepend(cancelCounter);incoming.append(counterForm);}else incoming.append(counterButton);}content.append(incoming);}
+    if(isActive&&!offer)content.append(editor());
+    if(!offer&&!isActive)content.append(element('p','trade-empty','Spelerstrades zijn beschikbaar tijdens je bouwfase.'));
+  }else{
+    const bankPanel=element('section','bank-trades');bankPanel.append(element('p','muted','Ruil met de bank tegen de verhouding van je beste haven.'));
+    const giveSelect=element('select','trade-select'),receiveSelect=element('select','trade-select');giveSelect.setAttribute('aria-label','Grondstof die je inlevert');receiveSelect.setAttribute('aria-label','Grondstof die je ontvangt');
+    const ownedHarbors=viewState.board.vertices.filter(vertex=>vertex.harbor&&viewState.buildings[vertex.id]?.owner===Number(viewState.playerId.slice(1))).map(vertex=>vertex.harbor!);
+    const ratioFor=(resource:Resource)=>ownedHarbors.some(harbor=>harbor.kind===resource)?2:ownedHarbors.some(harbor=>harbor.kind==='generic')?3:4;
+    const giveResources=[...new Set(bankTrades.map(action=>action.give))],currentGive=giveResources.includes(bankGive)?bankGive:giveResources[0];
+    for(const resource of giveResources){const option=element('option','',`${RESOURCE_ICON[resource as keyof typeof RESOURCE_ICON]} ${RESOURCE_NAMES[resource]}`);option.value=resource;option.selected=resource===currentGive;giveSelect.append(option);}bankGive=currentGive??bankGive;
+    const receiveResources=[...new Set(bankTrades.filter(action=>action.give===bankGive).map(action=>action.receive))],currentReceive=receiveResources.includes(bankReceive)?bankReceive:receiveResources[0];
+    for(const resource of receiveResources){const option=element('option','',`${RESOURCE_ICON[resource as keyof typeof RESOURCE_ICON]} ${RESOURCE_NAMES[resource]}`);option.value=resource;option.selected=resource===currentReceive;receiveSelect.append(option);}bankReceive=currentReceive??bankReceive;
+    const ratio=ratioFor(bankGive),available=Math.max(0,Math.min(Math.floor(viewState.ownResources[bankGive]/ratio),viewState.bank[bankReceive]??0));bankQuantity=Math.max(1,Math.min(bankQuantity,available||1));
+    const qtySelect=element('select','trade-select');qtySelect.setAttribute('aria-label','Aantal bankruilen');for(let count=1;count<=available;count++){const option=element('option','',`${count}×`);option.value=String(count);option.selected=count===bankQuantity;qtySelect.append(option);}qtySelect.disabled=available===0;
+    const summary=element('div','bank-trade-summary');summary.append(element('strong','',`${ratio} ${RESOURCE_NAMES[bankGive]} → 1 ${RESOURCE_NAMES[bankReceive]}`),element('span','muted',`Je hebt ${viewState.ownResources[bankGive]} ${RESOURCE_NAMES[bankGive]} · bank heeft ${viewState.bank[bankReceive]??0} ${RESOURCE_NAMES[bankReceive]}`));
+    const controls=element('div','bank-trade-controls');controls.append(giveSelect,receiveSelect,qtySelect);const feedback=element('p','trade-validation');feedback.setAttribute('aria-live','polite');
+    const tradeButton=element('button','gx-btn primary bank-trade-submit','Ruil met de bank');tradeButton.type='button';tradeButton.disabled=!available||!!pending||!!bankQueue;tradeButton.onclick=()=>{const selected=viewState.legalActions.find((action):action is Extract<GameAction,{type:'maritimeTrade'}>=>action.type==='maritimeTrade'&&action.give===bankGive&&action.receive===bankReceive);if(!selected)return;bankQueue={give:bankGive,receive:bankReceive,remaining:bankQuantity};tradeFeedback='';sendNextBankTrade();};
+    giveSelect.onchange=()=>{bankGive=giveSelect.value as Resource;bankQuantity=1;render();};receiveSelect.onchange=()=>{bankReceive=receiveSelect.value as Resource;render();};qtySelect.onchange=()=>{bankQuantity=Number(qtySelect.value);render();};bankPanel.append(controls,summary,tradeButton,feedback);
+    if(!bankTrades.length)bankPanel.append(element('p','trade-empty','Je hebt nu geen beschikbare bankruil.'));content.append(bankPanel);
   }
-  if(isActive)panel.append(editor());
-  if(bankTrades.length){const bankPanel=element('div','bank-trades');bankPanel.append(element('h3','','Bank- en havenhandel'),element('p','muted','Kies een beschikbare ruil op basis van je kaarten, bankvoorraad en havens.'));
-    const seen=new Set<string>();for(const action of bankTrades){const key=`${action.give}:${action.receive}`;if(seen.has(key))continue;seen.add(key);const harbors=viewState.board.vertices.filter(vertex=>vertex.harbor&&viewState.buildings[vertex.id]?.owner===Number(viewState.playerId.slice(1))).map(vertex=>vertex.harbor!);const ratio=harbors.some(harbor=>harbor.kind===action.give)?2:harbors.some(harbor=>harbor.kind==='generic')?3:4;bankPanel.append(actionButton(`${ratio} ${RESOURCE_NAMES[action.give]} → 1 ${RESOURCE_NAMES[action.receive]}`,action));}
-    panel.append(bankPanel);}
-  return panel;
+  if(tradeFeedback){const message=element('p','trade-feedback');message.setAttribute('role','status');message.textContent=tradeFeedback;content.append(message);}
+  modal.append(content);panel.append(modal);return panel;
 }
 function renderChat(){
   const panel=element('section','gx-section');panel.append(element('h3','gx-title','Chat'));
@@ -662,6 +693,6 @@ async function startGeneratedGame(map:MapDefinition,humanCount:number,botCount:n
 }
 if(location.pathname==='/maps/new')mountMapEditor(root,()=>location.assign('/'),startGeneratedGame);
 else if(roomId){seatToken=localStorage.getItem(`dimat-seat-${roomId}`)??'';const name=localStorage.getItem('dimat-name')??'';if(name)connect(name);else lobby('Vul je naam in om aan te sluiten.');}else lobby();
-document.addEventListener('keydown',event=>{if(event.key!=='`'||event.ctrlKey||event.metaKey||event.altKey)return;const target=event.target;if(target instanceof HTMLInputElement||target instanceof HTMLTextAreaElement||target instanceof HTMLSelectElement)return;debugEnabled=!debugEnabled;const url=new URL(location.href);if(debugEnabled)url.searchParams.set('debug','1');else url.searchParams.delete('debug');history.replaceState({},'',url);render();void refreshDebugData();});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&tradeOpen){tradeOpen=false;bankQueue=null;render();return;}if(event.key!=='`'||event.ctrlKey||event.metaKey||event.altKey)return;const target=event.target;if(target instanceof HTMLInputElement||target instanceof HTMLTextAreaElement||target instanceof HTMLSelectElement)return;debugEnabled=!debugEnabled;const url=new URL(location.href);if(debugEnabled)url.searchParams.set('debug','1');else url.searchParams.delete('debug');history.replaceState({},'',url);render();void refreshDebugData();});
 window.addEventListener('error',event=>{const message=event.error instanceof Error?event.error.message:event.message;root.replaceChildren();const card=element('section','card fatal-error');card.append(element('h1','','DiMaT liep vast'),element('p','',message));const copy=element('button','','Kopieer foutinformatie');copy.onclick=async()=>{const bundle=JSON.stringify({message,stack:event.error instanceof Error?event.error.stack:undefined,roomId,playerId,view,userAgent:navigator.userAgent},null,2);try{await navigator.clipboard.writeText(bundle);copy.textContent='Gekopieerd ✓';}catch{copy.textContent='Kopiëren niet beschikbaar';}};root.append(card);});
 window.addEventListener('unhandledrejection',event=>{lastServerError={code:'CLIENT_UNHANDLED_REJECTION',message:String(event.reason)};pushNotice('error',`Onverwachte fout: ${String(event.reason)}`);if(roomId)render();});
