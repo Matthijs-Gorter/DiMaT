@@ -31,7 +31,7 @@ let chatMessages:Array<{playerId:string;text:string;createdAt:number}>=[];
 let lifecycle:RoomLifecycle='lobby';let gameStartedReceived=false;let tradeOpen=false;let tradeTab:'players'|'bank'='players';
 let tradeDraftGive:Partial<Record<Resource,number>>={};let tradeDraftWant:Partial<Record<Resource,number>>={};let tradeDraftTargets=new Set<string>();let tradeTargetsInitialized=false;let tradeCounterVisible=false;
 let tradeFeedback='';let bankGive:Resource='brick';let bankReceive:Resource='lumber';let bankQuantity=1;let bankQueue:{give:Resource;receive:Resource;remaining:number}|null=null;
-let placementMode:PlacementMode=null;let pending:PendingAction|null=null;let robberChoices:GameAction[]|null=null;
+let placementMode:PlacementMode=null;let buildModeOpen=false;let pending:PendingAction|null=null;let robberChoices:GameAction[]|null=null;
 let debugEnabled=new URLSearchParams(location.search).get('debug')==='1';let devCardsOpen=false;let connectionState='connecting';let latencyMs:number|null=null;let lastServerError:Record<string,unknown>|null=null;let debugData:Record<string,unknown>|null=null;
 
 const element=<K extends keyof HTMLElementTagNameMap>(tag:K,cls='',text='')=>{
@@ -346,11 +346,12 @@ function drawBoard(host:HTMLElement,v:PlayerView){
   const initialViewBox=boardViewBox(v);const svg=svgElement('svg') as SVGSVGElement;svg.setAttribute('viewBox',initialViewBox.join(' '));svg.setAttribute('preserveAspectRatio','xMidYMid meet');svg.setAttribute('role','img');svg.setAttribute('aria-label','Game board');svg.classList.add('board');
   const defs=svgElement('defs'),mode=activePlacementMode(v);const terrainLayer=svgElement('g'),tileLayer=svgElement('g'),roadLayer=svgElement('g'),harborLayer=svgElement('g'),pieceLayer=svgElement('g'),targetLayer=svgElement('g'),previewLayer=svgElement('g');
   terrainLayer.setAttribute('class','terrain-layer');tileLayer.setAttribute('class','tile-layer');roadLayer.setAttribute('class','road-layer');harborLayer.setAttribute('class','harbor-layer');pieceLayer.setAttribute('class','piece-layer');targetLayer.setAttribute('class','target-layer');previewLayer.setAttribute('class','preview-layer');
+  const buildOverlay=buildModeOpen&&v.phase==='build'&&v.activePlayerId===v.playerId;
   const vertexTargets=new Map<number,GameAction>();
-  if(mode==='settlement')for(const action of v.legalActions)if(action.type==='placeSettlement'||action.type==='buildSettlement')vertexTargets.set(action.vertex,action);
-  if(mode==='city')for(const action of v.legalActions)if(action.type==='buildCity')vertexTargets.set(action.vertex,action);
+  if(mode==='settlement'||buildOverlay)for(const action of v.legalActions)if(action.type==='placeSettlement'||action.type==='buildSettlement')vertexTargets.set(action.vertex,action);
+  if(mode==='city'||buildOverlay)for(const action of v.legalActions)if(action.type==='buildCity')vertexTargets.set(action.vertex,action);
   const edgeTargets=new Map<number,GameAction>();
-  if(mode==='road')for(const action of v.legalActions)if(action.type==='placeRoad'||action.type==='buildRoad'||action.type==='buildBridge')edgeTargets.set(action.edge,action);
+  if(mode==='road'||buildOverlay)for(const action of v.legalActions)if(action.type==='placeRoad'||action.type==='buildRoad'||action.type==='buildBridge')edgeTargets.set(action.edge,action);
   const tileTargets=new Map<number,GameAction[]>();
   if(mode==='robber')for(const action of v.legalActions)if(action.type==='moveRobber'||action.type==='playKnight'){const tile='tile'in action?action.tile:-1;const list=tileTargets.get(tile)??[];list.push(action);tileTargets.set(tile,list);}
 
@@ -422,15 +423,13 @@ function actionButton(label:string,action:GameAction,cls=''){
 function renderActionBar(viewState:PlayerView){
   const bar=element('div','gx-actions');bar.setAttribute('role','group');bar.setAttribute('aria-label','Bouwen en acties');
   const mode=activePlacementMode(viewState),builds=element('div','gx-act-group');
-  const modes:[Exclude<PlacementMode,null>,string,string,boolean][]=[
-    ['road','Weg','1 brick · 1 hout',viewState.legalActions.some(a=>a.type==='buildRoad'||a.type==='placeRoad')],
-    ['settlement','Nederzetting','1 brick · 1 hout · 1 wol · 1 graan',viewState.legalActions.some(a=>a.type==='buildSettlement'||a.type==='placeSettlement')],
-    ['city','Stad','2 graan · 3 erts',viewState.legalActions.some(a=>a.type==='buildCity')]
-  ];
-  for(const [kind,label,cost,enabled] of modes){
-    const button=element('button',`gx-btn gx-act${mode===kind?' selected':''}`);button.type='button';button.title=cost;button.disabled=!enabled||!!pending;button.setAttribute('aria-pressed',String(mode===kind));
-    button.append(svgIcon(ACTION_SVG[kind as 'road'|'settlement'|'city']),element('span','',label));button.onclick=()=>submitBuildMode(mode===kind?null:kind);builds.append(button);
-  }
+  const canBuild=viewState.phase==='build'&&viewState.activePlayerId===viewState.playerId&&viewState.legalActions.some(a=>['buildRoad','buildBridge','buildSettlement','buildCity'].includes(a.type));
+  const buildButton=element('button',`gx-btn gx-build-toggle${buildModeOpen?' selected':''}`,'⚒  Bouwen');
+  buildButton.type='button';buildButton.disabled=!canBuild||!!pending;buildButton.setAttribute('aria-pressed',String(buildModeOpen));
+  buildButton.title='Toon alle mogelijke bouwlocaties op de kaart: wegen, bruggen, nederzettingen en steden.';
+  buildButton.onclick=()=>{buildModeOpen=!buildModeOpen;placementMode=null;robberChoices=null;render();};
+  builds.append(buildButton);
+  if(buildModeOpen){const hint=element('span','gx-build-hint','Kies een gemarkeerde plek op de kaart');builds.append(hint);const cancel=element('button','gx-btn gx-build-cancel','Sluiten');cancel.type='button';cancel.onclick=()=>{buildModeOpen=false;render();};builds.append(cancel);}
   bar.append(builds);
   const other=element('div','gx-act-group');
   const tradeButton=element('button',`gx-btn gx-trade-launch${tradeOpen?' selected':''}`);tradeButton.type='button';tradeButton.setAttribute('aria-pressed',String(tradeOpen));tradeButton.append(svgIcon('<path d="M7 10h3l2-2h3l2 2h2a2 2 0 0 1 1.6 3.2l-2.2 3a2 2 0 0 1-1.6.8h-3.1l-2-2H10l-2 2H5a2 2 0 0 1-1.6-3.2l2-3A2 2 0 0 1 7 10Z"/><path d="m9 10 2.4 2.3a1 1 0 0 0 1.4 0l2.2-2.1M9 14l1.3-1.3m2.9 1.3 1.3-1.3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/>'),element('span','','Ruilen'));tradeButton.onclick=()=>{tradeOpen=!tradeOpen;if(tradeOpen){tradeFeedback='';window.setTimeout(()=>document.querySelector<HTMLButtonElement>('.trade-modal-close')?.focus(),0);}else bankQueue=null;render();};other.append(tradeButton);
@@ -446,10 +445,10 @@ function renderDevStack(viewState:PlayerView){
   const count=viewState.ownDevelopmentCards.length;
   const playable=viewState.legalActions.some(a=>['playKnight','playRoadBuilding','playYearOfPlenty','playMonopoly','revealVictoryPoint'].includes(a.type));
   const button=element('button',`gx-btn gx-devstack${devCardsOpen?' selected':''}`);button.type='button';
-  button.title=count?'Toon of verberg je ontwikkelingskaarten':'Je hebt nog geen ontwikkelingskaarten';button.setAttribute('aria-pressed',String(devCardsOpen));
+  button.title='Ontwikkelingskaarten worden altijd getoond';button.setAttribute('aria-pressed','true');
   button.append(svgIcon('<rect x="6" y="3" width="12" height="18" rx="2"/>'),element('span','gx-devstack-count',String(count)),element('span','gx-devstack-label','ontwikkelings­kaarten'));
   if(playable)button.append(element('span','gx-dot'));
-  button.onclick=()=>{devCardsOpen=!devCardsOpen;render();};
+  button.disabled=true;
   return button;
 }
 function renderPlayerList(viewState:PlayerView){
@@ -588,8 +587,7 @@ function renderBank(viewState:PlayerView){
 function renderDevSummary(viewState:PlayerView){
   const section=element('section','gx-section gx-dev'),head=element('div','gx-dev-head'),text=element('div');
   text.append(element('h3','gx-title','Ontwikkelingskaarten'),element('p','',`${viewState.developmentCardsRemaining} in de stapel · ${viewState.ownDevelopmentCards.length} in je hand`));
-  const toggle=element('button','gx-btn',devCardsOpen?'Verberg':'Bekijk');toggle.type='button';toggle.setAttribute('aria-expanded',String(devCardsOpen));toggle.onclick=()=>{devCardsOpen=!devCardsOpen;render();};
-  head.append(text,toggle);section.append(head);if(devCardsOpen)section.append(renderDevelopmentHand(viewState));return section;
+  head.append(text);section.append(head,renderDevelopmentHand(viewState));return section;
 }
 function renderDebugActions(viewState:PlayerView){
   if(!debugEnabled)return null;const details=element('details','debug-actions'),summary=element('summary','','Debugpaneel');details.append(summary);
