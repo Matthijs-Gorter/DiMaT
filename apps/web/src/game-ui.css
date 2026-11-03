@@ -626,3 +626,45 @@ html[data-theme="light"] .trade-modal {
     animation: none;
   }
 }
+
+
+/* Unified build mode and always-visible development cards */
+.gx-build-toggle {
+  min-width: 8.5rem;
+  min-height: 2.9rem;
+  border-color: var(--gx-gold, #b89a58);
+  color: var(--gx-gold, #d5b66f);
+  font-weight: 700;
+  letter-spacing: .025em;
+}
+.gx-build-toggle.selected {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--gx-gold, #d5b66f) 24%, transparent), color-mix(in srgb, var(--gx-gold, #d5b66f) 9%, transparent));
+  box-shadow: 0 0 0 1px var(--gx-gold, #b89a58), 0 0 18px color-mix(in srgb, var(--gx-gold, #d5b66f) 22%, transparent);
+}
+.gx-build-hint { color: var(--gx-dim); font-size: .78rem; white-space: nowrap; }
+.gx-build-cancel { min-height: 2.6rem; }
+.development-hand {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: .45rem;
+  max-height: min(15rem, 25vh);
+  overflow: auto;
+  padding: .35rem 0;
+}
+.development-hand .dev-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: .35rem;
+  min-width: 0;
+  padding: .55rem;
+  border: 1px solid var(--gx-line);
+  border-radius: .65rem;
+  background: color-mix(in srgb, var(--gx-surface, #142b29) 86%, transparent);
+}
+.development-hand .dev-card .gx-btn { align-self: flex-start; min-height: 2rem; }
+.gx-devstack { display: none !important; }
+@media (max-width: 760px) {
+  .gx-build-hint { white-space: normal; }
+  .development-hand { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 10rem; }
+}
